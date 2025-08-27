@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,11 +13,49 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import TradingViewChart from "@/components/TradingViewChart"; // Import the new chart component
+import { CandlestickData, Time } from "lightweight-charts";
+
+// Helper function to generate dummy candlestick data
+const generateDummyCandlestickData = (
+  symbol: string,
+  timeframe: string,
+  count: number = 100
+): CandlestickData[] => {
+  const data: CandlestickData[] = [];
+  let lastClose = 100;
+  let time = Date.now() / 1000; // Current time in seconds
+
+  // Adjust time step based on timeframe
+  let timeStep = 60; // 1 minute in seconds
+  if (timeframe === "5m") timeStep = 5 * 60;
+  if (timeframe === "15m") timeStep = 15 * 60;
+  if (timeframe === "1h") timeStep = 60 * 60;
+  if (timeframe === "4h") timeStep = 4 * 60 * 60;
+  if (timeframe === "1d") timeStep = 24 * 60 * 60;
+
+  for (let i = 0; i < count; i++) {
+    const open = lastClose * (1 + (Math.random() - 0.5) * 0.02);
+    const close = open * (1 + (Math.random() - 0.5) * 0.03);
+    const high = Math.max(open, close) * (1 + Math.random() * 0.01);
+    const low = Math.min(open, close) * (1 - Math.random() * 0.01);
+
+    data.unshift({
+      time: (time - i * timeStep) as Time, // Go backwards in time
+      open,
+      high,
+      low,
+      close,
+    });
+    lastClose = close;
+  }
+  return data;
+};
 
 const Monitor = () => {
   const [selectedSymbol, setSelectedSymbol] = useState("AAPL");
   const [timeframe, setTimeframe] = useState("1h");
-  const [chartData, setChartData] = useState([]); // This would be populated by real-time data
+  const [chartData, setChartData] = useState<CandlestickData[]>([]);
   const [marketData, setMarketData] = useState({
     price: 172.45,
     change: "+1.20",
@@ -29,22 +67,34 @@ const Monitor = () => {
     close: 172.45,
   });
 
-  // Placeholder for fetching data - this would integrate with Finnhub/WebSockets
+  useEffect(() => {
+    fetchMarketData();
+  }, [selectedSymbol, timeframe]);
+
   const fetchMarketData = () => {
     console.log(`Fetching data for ${selectedSymbol} with timeframe ${timeframe}`);
     // Simulate data fetch
-    setMarketData({
-      price: (Math.random() * 100 + 150).toFixed(2),
-      change: (Math.random() * 5 - 2.5).toFixed(2),
-      changePercent: (Math.random() * 2 - 1).toFixed(2) + "%",
-      volume: (Math.random() * 100).toFixed(1) + "M",
-      high: (Math.random() * 10 + 170).toFixed(2),
-      low: (Math.random() * 5 + 165).toFixed(2),
-      open: (Math.random() * 5 + 168).toFixed(2),
-      close: (Math.random() * 5 + 170).toFixed(2),
-    });
-    // In a real app, this would fetch actual chart data
-    setChartData([]); 
+    const newChartData = generateDummyCandlestickData(selectedSymbol, timeframe);
+    setChartData(newChartData);
+
+    const latestCandle = newChartData[newChartData.length - 1];
+    if (latestCandle) {
+      const price = latestCandle.close;
+      const prevClose = newChartData[newChartData.length - 2]?.close || latestCandle.open;
+      const change = price - prevClose;
+      const changePercent = (change / prevClose) * 100;
+
+      setMarketData({
+        price: parseFloat(price.toFixed(2)),
+        change: change.toFixed(2),
+        changePercent: changePercent.toFixed(2) + "%",
+        volume: (Math.random() * 100).toFixed(1) + "M",
+        high: parseFloat(latestCandle.high.toFixed(2)),
+        low: parseFloat(latestCandle.low.toFixed(2)),
+        open: parseFloat(latestCandle.open.toFixed(2)),
+        close: parseFloat(latestCandle.close.toFixed(2)),
+      });
+    }
   };
 
   return (
@@ -131,15 +181,19 @@ const Monitor = () => {
         </Card>
       </div>
 
-      {/* Chart Placeholder */}
+      {/* Chart */}
       <Card className="mb-8">
         <CardHeader>
           <CardTitle>Chart for {selectedSymbol}</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="h-96 bg-muted flex items-center justify-center rounded-md text-muted-foreground">
-            {/* This is where the TradingView Lightweight Chart would be integrated */}
-            <p>TradingView Chart Placeholder</p>
+          <div className="h-96">
+            <TradingViewChart 
+              data={chartData} 
+              timeframe={timeframe} 
+              symbol={selectedSymbol} 
+              className="h-full"
+            />
           </div>
         </CardContent>
       </Card>
