@@ -11,11 +11,12 @@ import {
   Menu,
   X,
   Sun,
-  Moon
+  Moon,
+  MonitorDot // Import the new icon for Monitor
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import { cn } from "@/lib/utils";
-import { Link } from "react-router-dom"; // Import Link for navigation
+import { Link } from "react-router-dom";
 
 const Sidebar = ({ activePage, setActivePage }: { 
   activePage: string; 
@@ -26,10 +27,11 @@ const Sidebar = ({ activePage, setActivePage }: {
 
   const navItems = [
     { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, path: "/dashboard" },
+    { id: "monitor", label: "Monitor", icon: MonitorDot, path: "/monitor" }, // Add Monitor to nav
     { id: "strategies", label: "Strategies", icon: BarChart3, path: "/strategies" },
     { id: "alerts", label: "Alerts", icon: Bell, path: "/alerts" },
     { id: "journal", label: "Trade Journal", icon: BookOpen, path: "/journal" },
-    { id: "settings", label: "Settings", icon: Settings, path: "/settings" }, // Add path for settings
+    { id: "settings", label: "Settings", icon: Settings, path: "/settings" },
   ];
 
   const toggleTheme = () => {
