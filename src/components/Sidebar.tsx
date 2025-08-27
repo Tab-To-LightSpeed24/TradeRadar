@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import { cn } from "@/lib/utils";
+import { Link } from "react-router-dom"; // Import Link for navigation
 
 const Sidebar = ({ activePage, setActivePage }: { 
   activePage: string; 
@@ -24,11 +25,11 @@ const Sidebar = ({ activePage, setActivePage }: {
   const [isOpen, setIsOpen] = useState(false);
 
   const navItems = [
-    { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
-    { id: "strategies", label: "Strategies", icon: BarChart3 },
-    { id: "alerts", label: "Alerts", icon: Bell },
-    { id: "journal", label: "Trade Journal", icon: BookOpen },
-    { id: "settings", label: "Settings", icon: Settings },
+    { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, path: "/dashboard" },
+    { id: "strategies", label: "Strategies", icon: BarChart3, path: "/strategies" },
+    { id: "alerts", label: "Alerts", icon: Bell, path: "/alerts" },
+    { id: "journal", label: "Trade Journal", icon: BookOpen, path: "/journal" },
+    { id: "settings", label: "Settings", icon: Settings, path: "/settings" }, // Add path for settings
   ];
 
   const toggleTheme = () => {
@@ -66,20 +67,21 @@ const Sidebar = ({ activePage, setActivePage }: {
                 const Icon = item.icon;
                 return (
                   <li key={item.id}>
-                    <Button
-                      variant="ghost"
-                      className={cn(
-                        "w-full justify-start h-10 mb-1",
-                        activePage === item.id && "bg-muted"
-                      )}
-                      onClick={() => {
-                        setActivePage(item.id);
-                        setIsOpen(false);
-                      }}
-                    >
-                      <Icon className="mr-3 h-5 w-5" />
-                      {item.label}
-                    </Button>
+                    <Link to={item.path} onClick={() => {
+                      setActivePage(item.id);
+                      setIsOpen(false);
+                    }}>
+                      <Button
+                        variant="ghost"
+                        className={cn(
+                          "w-full justify-start h-10 mb-1",
+                          activePage === item.id && "bg-muted"
+                        )}
+                      >
+                        <Icon className="mr-3 h-5 w-5" />
+                        {item.label}
+                      </Button>
+                    </Link>
                   </li>
                 );
               })}

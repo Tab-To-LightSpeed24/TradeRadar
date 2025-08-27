@@ -8,6 +8,7 @@ import Dashboard from "./pages/Dashboard";
 import Strategies from "./pages/Strategies";
 import Alerts from "./pages/Alerts";
 import Journal from "./pages/Journal";
+import Settings from "./pages/Settings"; // Import the new Settings page
 import NotFound from "./pages/NotFound";
 import { useState } from "react";
 import Sidebar from "./components/Sidebar";
@@ -34,6 +35,7 @@ const App = () => {
                   <Route path="/strategies" element={<Strategies />} />
                   <Route path="/alerts" element={<Alerts />} />
                   <Route path="/journal" element={<Journal />} />
+                  <Route path="/settings" element={<Settings />} /> {/* Add the new Settings route */}
                   {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
                   <Route path="*" element={<NotFound />} />
                 </Routes>
