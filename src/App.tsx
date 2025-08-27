@@ -9,11 +9,12 @@ import Strategies from "./pages/Strategies";
 import Alerts from "./pages/Alerts";
 import Journal from "./pages/Journal";
 import Settings from "./pages/Settings";
-import Monitor from "./pages/Monitor"; // Import the new Monitor page
+import Monitor from "./pages/Monitor";
 import NotFound from "./pages/NotFound";
 import { useState } from "react";
 import Sidebar from "./components/Sidebar";
 import { ThemeProvider } from "next-themes";
+import { AuthProvider } from "./contexts/AuthContext"; // Import AuthProvider
 
 const queryClient = new QueryClient();
 
@@ -27,22 +28,24 @@ const App = () => {
           <Toaster />
           <Sonner />
           <BrowserRouter>
-            <div className="flex h-screen">
-              <Sidebar activePage={activePage} setActivePage={setActivePage} />
-              <main className="flex-1 md:ml-64 pt-16 md:pt-0 overflow-auto">
-                <Routes>
-                  <Route path="/" element={<Index />} />
-                  <Route path="/dashboard" element={<Dashboard />} />
-                  <Route path="/strategies" element={<Strategies />} />
-                  <Route path="/alerts" element={<Alerts />} />
-                  <Route path="/journal" element={<Journal />} />
-                  <Route path="/settings" element={<Settings />} />
-                  <Route path="/monitor" element={<Monitor />} /> {/* Add the new Monitor route */}
-                  {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-                  <Route path="*" element={<NotFound />} />
-                </Routes>
-              </main>
-            </div>
+            <AuthProvider> {/* Wrap the entire application with AuthProvider */}
+              <div className="flex h-screen">
+                <Sidebar activePage={activePage} setActivePage={setActivePage} />
+                <main className="flex-1 md:ml-64 pt-16 md:pt-0 overflow-auto">
+                  <Routes>
+                    <Route path="/" element={<Index />} />
+                    <Route path="/dashboard" element={<Dashboard />} />
+                    <Route path="/strategies" element={<Strategies />} />
+                    <Route path="/alerts" element={<Alerts />} />
+                    <Route path="/journal" element={<Journal />} />
+                    <Route path="/settings" element={<Settings />} />
+                    <Route path="/monitor" element={<Monitor />} />
+                    {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+                    <Route path="*" element={<NotFound />} />
+                  </Routes>
+                </main>
+              </div>
+            </AuthProvider>
           </BrowserRouter>
         </TooltipProvider>
       </ThemeProvider>

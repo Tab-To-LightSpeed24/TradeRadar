@@ -12,11 +12,15 @@ import {
   X,
   Sun,
   Moon,
-  MonitorDot // Import the new icon for Monitor
+  MonitorDot,
+  LogIn, // Import LogIn icon
+  LogOut, // Import LogOut icon
+  UserCircle // Import UserCircle icon
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import { cn } from "@/lib/utils";
 import { Link } from "react-router-dom";
+import { useAuth } from "@/contexts/AuthContext"; // Import useAuth hook
 
 const Sidebar = ({ activePage, setActivePage }: { 
   activePage: string; 
@@ -24,10 +28,11 @@ const Sidebar = ({ activePage, setActivePage }: {
 }) => {
   const { theme, setTheme } = useTheme();
   const [isOpen, setIsOpen] = useState(false);
+  const { user, loading, signInWithGoogle, signOut } = useAuth(); // Use the auth hook
 
   const navItems = [
     { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, path: "/dashboard" },
-    { id: "monitor", label: "Monitor", icon: MonitorDot, path: "/monitor" }, // Add Monitor to nav
+    { id: "monitor", label: "Monitor", icon: MonitorDot, path: "/monitor" },
     { id: "strategies", label: "Strategies", icon: BarChart3, path: "/strategies" },
     { id: "alerts", label: "Alerts", icon: Bell, path: "/alerts" },
     { id: "journal", label: "Trade Journal", icon: BookOpen, path: "/journal" },
@@ -90,7 +95,34 @@ const Sidebar = ({ activePage, setActivePage }: {
             </ul>
           </nav>
           
-          <div className="p-4 border-t">
+          <div className="p-4 border-t space-y-2">
+            {loading ? (
+              <div className="text-sm text-muted-foreground">Loading user...</div>
+            ) : user ? (
+              <>
+                <div className="flex items-center gap-2 mb-2">
+                  <UserCircle className="h-5 w-5 text-muted-foreground" />
+                  <span className="text-sm font-medium truncate">{user.email || "User"}</span>
+                </div>
+                <Button 
+                  variant="ghost" 
+                  className="w-full justify-start"
+                  onClick={signOut}
+                >
+                  <LogOut className="mr-3 h-5 w-5" />
+                  Logout
+                </Button>
+              </>
+            ) : (
+              <Button 
+                variant="ghost" 
+                className="w-full justify-start"
+                onClick={signInWithGoogle}
+              >
+                <LogIn className="mr-3 h-5 w-5" />
+                Login with Google
+              </Button>
+            )}
             <Button 
               variant="ghost" 
               className="w-full justify-start"
