@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useRef } from 'react';
-import { createChart, IChartApi, ISeriesApi, CandlestickData, UTCTimestamp } from 'lightweight-charts';
+import { createChart, IChartApi, ISeriesApi, CandlestickData, UTCTimestamp, ColorType } from 'lightweight-charts';
 import { cn } from '@/lib/utils';
 
 interface TradingViewChartProps {
@@ -22,7 +22,7 @@ const TradingViewChart: React.FC<TradingViewChartProps> = ({ data, timeframe, sy
     const chartOptions = {
       layout: {
         textColor: 'hsl(var(--foreground))',
-        background: { type: 'solid' as const, color: 'hsl(var(--background))' },
+        background: { type: ColorType.Solid, color: 'hsl(var(--background))' },
       },
       grid: {
         vertLines: { color: 'hsl(var(--border))' },
@@ -41,8 +41,8 @@ const TradingViewChart: React.FC<TradingViewChartProps> = ({ data, timeframe, sy
     chartRef.current = chart;
 
     const candlestickSeries = chart.addCandlestickSeries({
-      upColor: 'hsl(142.1 76.2% 36.3%)', // green-500
-      downColor: 'hsl(0 84.2% 60.2%)', // destructive
+      upColor: 'hsl(142.1 76.2% 36.3%)',
+      downColor: 'hsl(0 84.2% 60.2%)',
       borderVisible: false,
       wickUpColor: 'hsl(142.1 76.2% 36.3%)',
       wickDownColor: 'hsl(0 84.2% 60.2%)',
