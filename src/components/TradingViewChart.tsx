@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useEffect, useRef } from 'react';
-import { createChart, IChartApi, ISeriesApi, CandlestickData, UTCTimestamp, ColorType } from 'lightweight-charts';
+import { createChart, ColorType } from 'lightweight-charts';
+import type { IChartApi, ISeriesApi, CandlestickData, UTCTimestamp } from 'lightweight-charts';
 import { cn } from '@/lib/utils';
 
 interface TradingViewChartProps {
@@ -18,6 +19,12 @@ const TradingViewChart: React.FC<TradingViewChartProps> = ({ data, timeframe, sy
 
   useEffect(() => {
     if (!chartContainerRef.current) return;
+
+    // Cleanup previous chart instance if it exists
+    if (chartRef.current) {
+      chartRef.current.remove();
+      chartRef.current = null;
+    }
 
     const chartOptions = {
       layout: {
@@ -49,14 +56,9 @@ const TradingViewChart: React.FC<TradingViewChartProps> = ({ data, timeframe, sy
     });
     candlestickSeriesRef.current = candlestickSeries;
 
-    if (data && data.length > 0) {
-      candlestickSeries.setData(data);
-      chart.timeScale().fitContent();
-    }
-
     const handleResize = () => {
-      if (chartContainerRef.current) {
-        chart.applyOptions({
+      if (chartContainerRef.current && chartRef.current) {
+        chartRef.current.applyOptions({
           width: chartContainerRef.current.clientWidth,
           height: chartContainerRef.current.clientHeight,
         });
@@ -82,15 +84,6 @@ const TradingViewChart: React.FC<TradingViewChartProps> = ({ data, timeframe, sy
       }
     }
   }, [data]);
-
-  useEffect(() => {
-    if (chartRef.current && chartContainerRef.current) {
-      chartRef.current.applyOptions({
-        width: chartContainerRef.current.clientWidth,
-        height: chartContainerRef.current.clientHeight,
-      });
-    }
-  }, [className]);
 
   return (
     <div
