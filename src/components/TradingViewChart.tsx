@@ -1,6 +1,6 @@
 "use client";
 
-import React, aimport { useEffect, useRef } from 'react';
+import React, { useEffect, useRef } from 'react';
 import * as LightweightCharts from 'lightweight-charts';
 import { cn } from '@/lib/utils';
 
