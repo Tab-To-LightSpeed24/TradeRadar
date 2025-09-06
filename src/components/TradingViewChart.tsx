@@ -1,11 +1,11 @@
 "use client";
 
-import React, { useEffect, useRef } from 'react';
-import { createChart, IChartApi, ISeriesApi, CandlestickData, Time } from 'lightweight-charts';
+import React, aimport { useEffect, useRef } from 'react';
+import * as LightweightCharts from 'lightweight-charts';
 import { cn } from '@/lib/utils';
 
 interface TradingViewChartProps {
-  data: CandlestickData[];
+  data: LightweightCharts.CandlestickData[];
   timeframe: string;
   symbol: string;
   className?: string;
@@ -13,8 +13,8 @@ interface TradingViewChartProps {
 
 const TradingViewChart: React.FC<TradingViewChartProps> = ({ data, timeframe, symbol, className }) => {
   const chartContainerRef = useRef<HTMLDivElement>(null);
-  const chartRef = useRef<IChartApi | null>(null);
-  const candlestickSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
+  const chartRef = useRef<LightweightCharts.IChartApi | null>(null);
+  const candlestickSeriesRef = useRef<LightweightCharts.ISeriesApi<'Candlestick'> | null>(null);
 
   useEffect(() => {
     if (!chartContainerRef.current) return;
@@ -22,7 +22,7 @@ const TradingViewChart: React.FC<TradingViewChartProps> = ({ data, timeframe, sy
     const chartOptions = {
       layout: {
         textColor: 'hsl(var(--foreground))',
-        background: { type: 'solid', color: 'hsl(var(--background))' },
+        background: { type: 'solid' as const, color: 'hsl(var(--background))' },
       },
       grid: {
         vertLines: { color: 'hsl(var(--border))' },
@@ -37,7 +37,7 @@ const TradingViewChart: React.FC<TradingViewChartProps> = ({ data, timeframe, sy
       },
     };
 
-    const chart = createChart(chartContainerRef.current, chartOptions);
+    const chart = LightweightCharts.createChart(chartContainerRef.current, chartOptions);
     chartRef.current = chart;
 
     const candlestickSeries = chart.addCandlestickSeries({
