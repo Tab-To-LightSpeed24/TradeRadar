@@ -1,11 +1,11 @@
 "use client";
 
 import React, { useEffect, useRef } from 'react';
-import * as LightweightCharts from 'lightweight-charts';
+import { createChart, IChartApi, ISeriesApi, CandlestickData, UTCTimestamp } from 'lightweight-charts';
 import { cn } from '@/lib/utils';
 
 interface TradingViewChartProps {
-  data: LightweightCharts.CandlestickData[];
+  data: (CandlestickData<UTCTimestamp>)[];
   timeframe: string;
   symbol: string;
   className?: string;
@@ -13,8 +13,8 @@ interface TradingViewChartProps {
 
 const TradingViewChart: React.FC<TradingViewChartProps> = ({ data, timeframe, symbol, className }) => {
   const chartContainerRef = useRef<HTMLDivElement>(null);
-  const chartRef = useRef<LightweightCharts.IChartApi | null>(null);
-  const candlestickSeriesRef = useRef<LightweightCharts.ISeriesApi<'Candlestick'> | null>(null);
+  const chartRef = useRef<IChartApi | null>(null);
+  const candlestickSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
 
   useEffect(() => {
     if (!chartContainerRef.current) return;
@@ -37,7 +37,7 @@ const TradingViewChart: React.FC<TradingViewChartProps> = ({ data, timeframe, sy
       },
     };
 
-    const chart = LightweightCharts.createChart(chartContainerRef.current, chartOptions);
+    const chart = createChart(chartContainerRef.current, chartOptions);
     chartRef.current = chart;
 
     const candlestickSeries = chart.addCandlestickSeries({
@@ -49,11 +49,10 @@ const TradingViewChart: React.FC<TradingViewChartProps> = ({ data, timeframe, sy
     });
     candlestickSeriesRef.current = candlestickSeries;
 
-    // Set initial data
-    candlestickSeries.setData(data);
-
-    // Adjust chart to fit data
-    chart.timeScale().fitContent();
+    if (data && data.length > 0) {
+      candlestickSeries.setData(data);
+      chart.timeScale().fitContent();
+    }
 
     const handleResize = () => {
       if (chartContainerRef.current) {
@@ -73,16 +72,16 @@ const TradingViewChart: React.FC<TradingViewChartProps> = ({ data, timeframe, sy
         chartRef.current = null;
       }
     };
-  }, []); // Empty dependency array means this runs once on mount
+  }, []);
 
   useEffect(() => {
-    if (candlestickSeriesRef.current) {
+    if (candlestickSeriesRef.current && data) {
       candlestickSeriesRef.current.setData(data);
       if (chartRef.current) {
         chartRef.current.timeScale().fitContent();
       }
     }
-  }, [data]); // Update data when `data` prop changes
+  }, [data]);
 
   useEffect(() => {
     if (chartRef.current && chartContainerRef.current) {
@@ -91,7 +90,7 @@ const TradingViewChart: React.FC<TradingViewChartProps> = ({ data, timeframe, sy
         height: chartContainerRef.current.clientHeight,
       });
     }
-  }, [className]); // Re-apply options if className changes (e.g., for dynamic sizing)
+  }, [className]);
 
   return (
     <div
