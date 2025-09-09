@@ -1,4 +1,5 @@
-<img width="1919" height="914" alt="image" src="https://github.com/user-attachments/assets/8494635e-56f0-478b-a956-2802482af9bb" /># 📈 TradeRadar
+<img width="1919" height="906" alt="image" src="https://github.com/user-attachments/assets/206ef070-55d1-45bd-ae81-abc4b4ffdd93" />
+# 📈 TradeRadar
 
 TradeRadar is a **secure, alert-only trading companion**. It lets traders turn written strategies into validated, running monitors, watches markets **24×7**, and sends concise alerts when setups occur. It also includes a **fast manual trade journal** with analytics to help improve decision-making over time.
 
@@ -132,6 +133,7 @@ _Per-strategy KPIs, win/loss ratios, expectancy curves, drawdowns, and sentiment
 TradeRadar is **alert-only**. It does not execute trades. All trading decisions remain the user’s responsibility. Use at your own risk.
 
 ---
+
 
 
 
