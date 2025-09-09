@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -11,7 +11,7 @@ import {
   Edit, 
   Trash2,
   Plus,
-  Settings
+  Loader2
 } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
@@ -24,96 +24,136 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/lib/supabase";
+import { toast } from "sonner";
+import { Skeleton } from "@/components/ui/skeleton";
+
+// Define the type for a strategy
+interface Strategy {
+  id: string;
+  user_id: string;
+  name: string;
+  description: string;
+  status: 'running' | 'stopped' | 'degraded';
+  timeframe: string;
+  symbols: string[];
+  created_at: string;
+}
 
 const Strategies = () => {
-  const [strategies, setStrategies] = useState([
-    {
-      id: 1,
-      name: "Bullish Breakout",
-      description: "Buy when price breaks above 20-day high with volume spike",
-      status: "running",
-      timeframe: "15m",
-      symbols: ["AAPL", "MSFT", "GOOGL"],
-      winRate: 68,
-      pnl: 1250
-    },
-    {
-      id: 2,
-      name: "Mean Reversion",
-      description: "Sell oversold RSI(2) < 10 with bullish divergence",
-      status: "stopped",
-      timeframe: "1h",
-      symbols: ["TSLA", "NVDA"],
-      winRate: 52,
-      pnl: -250
-    },
-    {
-      id: 3,
-      name: "Volatility Breakout",
-      description: "Enter long when volatility expands beyond 20-day average",
-      status: "degraded",
-      timeframe: "5m",
-      symbols: ["AMZN", "META"],
-      winRate: 75,
-      pnl: 890
-    }
-  ]);
-
+  const { user, loading: authLoading } = useAuth();
+  const [strategies, setStrategies] = useState<Strategy[]>([]);
+  const [loading, setLoading] = useState(true);
   const [showCreator, setShowCreator] = useState(false);
   const [newStrategy, setNewStrategy] = useState({
     name: "",
     description: "",
     timeframe: "15m",
     symbols: "",
-    indicators: [] as string[]
   });
 
-  const toggleStrategy = (id: number) => {
-    setStrategies(strategies.map(strategy => 
-      strategy.id === id 
-        ? { ...strategy, status: strategy.status === "running" ? "stopped" : "running" }
-        : strategy
-    ));
-  };
+  const fetchStrategies = useCallback(async () => {
+    if (!user) return;
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('strategies')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
 
-  const cloneStrategy = (id: number) => {
-    const strategyToClone = strategies.find(s => s.id === id);
-    if (strategyToClone) {
-      const newStrategy = {
-        ...strategyToClone,
-        id: Math.max(...strategies.map(s => s.id)) + 1,
-        name: `${strategyToClone.name} (Copy)`,
-        status: "stopped"
-      };
-      setStrategies([...strategies, newStrategy]);
+      if (error) throw error;
+      setStrategies(data as Strategy[]);
+    } catch (error: any) {
+      toast.error("Failed to fetch strategies:", error.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    if (!authLoading) {
+      fetchStrategies();
+    }
+  }, [authLoading, fetchStrategies]);
+
+  const toggleStrategy = async (id: string, currentStatus: string) => {
+    const newStatus = currentStatus === "running" ? "stopped" : "running";
+    try {
+      const { error } = await supabase
+        .from('strategies')
+        .update({ status: newStatus })
+        .eq('id', id);
+      
+      if (error) throw error;
+      toast.success(`Strategy ${newStatus === 'running' ? 'started' : 'stopped'}.`);
+      fetchStrategies();
+    } catch (error: any) {
+      toast.error("Failed to update strategy status:", error.message);
     }
   };
 
-  const deleteStrategy = (id: number) => {
-    setStrategies(strategies.filter(strategy => strategy.id !== id));
+  const cloneStrategy = async (strategyToClone: Strategy) => {
+    try {
+      const { name, description, timeframe, symbols } = strategyToClone;
+      const newStrategyData = {
+        user_id: user!.id,
+        name: `${name} (Copy)`,
+        description,
+        timeframe,
+        symbols,
+        status: 'stopped'
+      };
+
+      const { error } = await supabase.from('strategies').insert([newStrategyData]);
+      if (error) throw error;
+
+      toast.success("Strategy cloned successfully.");
+      fetchStrategies();
+    } catch (error: any) {
+      toast.error("Failed to clone strategy:", error.message);
+    }
   };
 
-  const handleCreateStrategy = () => {
+  const deleteStrategy = async (id: string) => {
+    try {
+      const { error } = await supabase.from('strategies').delete().eq('id', id);
+      if (error) throw error;
+      toast.success("Strategy deleted.");
+      setStrategies(strategies.filter(strategy => strategy.id !== id));
+    } catch (error: any) {
+      toast.error("Failed to delete strategy:", error.message);
+    }
+  };
+
+  const handleCreateStrategy = async () => {
+    if (!user) {
+      toast.error("You must be logged in to create a strategy.");
+      return;
+    }
     if (newStrategy.name && newStrategy.description) {
-      const strategy = {
-        id: Math.max(...strategies.map(s => s.id), 0) + 1,
-        name: newStrategy.name,
-        description: newStrategy.description,
-        status: "stopped",
-        timeframe: newStrategy.timeframe,
-        symbols: newStrategy.symbols.split(",").map(s => s.trim()).filter(s => s),
-        winRate: 0,
-        pnl: 0
-      };
-      setStrategies([...strategies, strategy]);
-      setNewStrategy({
-        name: "",
-        description: "",
-        timeframe: "15m",
-        symbols: "",
-        indicators: []
-      });
-      setShowCreator(false);
+      try {
+        const strategyData = {
+          user_id: user.id,
+          name: newStrategy.name,
+          description: newStrategy.description,
+          status: "stopped",
+          timeframe: newStrategy.timeframe,
+          symbols: newStrategy.symbols.split(",").map(s => s.trim()).filter(s => s),
+        };
+        const { error } = await supabase.from('strategies').insert([strategyData]);
+        if (error) throw error;
+
+        toast.success("Strategy created successfully!");
+        fetchStrategies();
+        setNewStrategy({ name: "", description: "", timeframe: "15m", symbols: "" });
+        setShowCreator(false);
+      } catch (error: any) {
+        toast.error("Failed to create strategy:", error.message);
+      }
+    } else {
+      toast.warning("Please fill in the strategy name and description.");
     }
   };
 
@@ -135,6 +175,23 @@ const Strategies = () => {
     }
   };
 
+  if (authLoading) {
+    return (
+      <div className="container mx-auto py-8 flex justify-center items-center">
+        <Loader2 className="h-8 w-8 animate-spin" />
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <div className="container mx-auto py-8 text-center">
+        <h2 className="text-2xl font-bold mb-4">Please log in</h2>
+        <p className="text-muted-foreground">You need to be logged in to manage your trading strategies.</p>
+      </div>
+    );
+  }
+
   return (
     <div className="container mx-auto py-8">
       <div className="flex justify-between items-center mb-8">
@@ -145,7 +202,6 @@ const Strategies = () => {
         </Button>
       </div>
 
-      {/* Strategy Creator */}
       {showCreator && (
         <Card className="mb-8">
           <CardHeader>
@@ -218,73 +274,88 @@ const Strategies = () => {
         </Card>
       )}
 
-      {/* Strategy Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {strategies.map((strategy) => (
-          <Card key={strategy.id} className="hover:shadow-lg transition-shadow">
-            <CardHeader className="pb-2">
-              <div className="flex justify-between items-start">
-                <CardTitle className="text-lg">{strategy.name}</CardTitle>
-                <Badge className={`${getStatusColor(strategy.status)} text-white`}>
-                  {getStatusText(strategy.status)}
-                </Badge>
-              </div>
-              <p className="text-sm text-muted-foreground">{strategy.description}</p>
-            </CardHeader>
-            <CardContent>
-              <div className="flex flex-wrap gap-1 mb-4">
-                {strategy.symbols.map((symbol, index) => (
-                  <Badge key={index} variant="secondary">{symbol}</Badge>
-                ))}
-              </div>
-              
-              <div className="grid grid-cols-2 gap-2 mb-4 text-sm">
-                <div>
-                  <span className="font-medium">Timeframe:</span> {strategy.timeframe}
+      {loading ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {[...Array(3)].map((_, i) => (
+            <Card key={i}>
+              <CardHeader>
+                <Skeleton className="h-6 w-3/4" />
+                <Skeleton className="h-4 w-full mt-2" />
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <Skeleton className="h-4 w-1/2" />
+                <Skeleton className="h-4 w-1/2" />
+                <div className="flex justify-end">
+                  <Skeleton className="h-8 w-20" />
                 </div>
-                <div>
-                  <span className="font-medium">Win Rate:</span> {strategy.winRate}%
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      ) : strategies.length > 0 ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {strategies.map((strategy) => (
+            <Card key={strategy.id} className="hover:shadow-lg transition-shadow">
+              <CardHeader className="pb-2">
+                <div className="flex justify-between items-start">
+                  <CardTitle className="text-lg">{strategy.name}</CardTitle>
+                  <Badge className={`${getStatusColor(strategy.status)} text-white`}>
+                    {getStatusText(strategy.status)}
+                  </Badge>
                 </div>
-                <div>
-                  <span className="font-medium">P&L:</span> 
-                  <span className={strategy.pnl >= 0 ? "text-green-500 ml-1" : "text-red-500 ml-1"}>
-                    ${strategy.pnl}
-                  </span>
+                <p className="text-sm text-muted-foreground">{strategy.description}</p>
+              </CardHeader>
+              <CardContent>
+                <div className="flex flex-wrap gap-1 mb-4">
+                  {strategy.symbols.map((symbol, index) => (
+                    <Badge key={index} variant="secondary">{symbol}</Badge>
+                  ))}
                 </div>
-              </div>
-              
-              <div className="flex justify-between items-center">
-                <div className="flex gap-2">
-                  <Button 
-                    size="sm" 
-                    variant="outline" 
-                    onClick={() => toggleStrategy(strategy.id)}
-                  >
-                    {strategy.status === "running" ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
-                  </Button>
-                  <Button 
-                    size="sm" 
-                    variant="outline" 
-                    onClick={() => cloneStrategy(strategy.id)}
-                  >
-                    <Copy className="w-4 h-4" />
-                  </Button>
-                  <Button size="sm" variant="outline">
-                    <Edit className="w-4 h-4" />
-                  </Button>
-                  <Button 
-                    size="sm" 
-                    variant="outline" 
-                    onClick={() => deleteStrategy(strategy.id)}
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </Button>
+                
+                <div className="grid grid-cols-2 gap-2 mb-4 text-sm">
+                  <div>
+                    <span className="font-medium">Timeframe:</span> {strategy.timeframe}
+                  </div>
                 </div>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+                
+                <div className="flex justify-between items-center">
+                  <div className="flex gap-2">
+                    <Button 
+                      size="sm" 
+                      variant="outline" 
+                      onClick={() => toggleStrategy(strategy.id, strategy.status)}
+                    >
+                      {strategy.status === "running" ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+                    </Button>
+                    <Button 
+                      size="sm" 
+                      variant="outline" 
+                      onClick={() => cloneStrategy(strategy)}
+                    >
+                      <Copy className="w-4 h-4" />
+                    </Button>
+                    <Button size="sm" variant="outline">
+                      <Edit className="w-4 h-4" />
+                    </Button>
+                    <Button 
+                      size="sm" 
+                      variant="outline" 
+                      onClick={() => deleteStrategy(strategy.id)}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      ) : (
+        <div className="text-center py-16 border-2 border-dashed rounded-lg">
+          <h3 className="text-xl font-semibold">No Strategies Found</h3>
+          <p className="text-muted-foreground mt-2">Click "New Strategy" to create your first one.</p>
+        </div>
+      )}
     </div>
   );
 };
