@@ -17,6 +17,8 @@ Deno.serve(async (req) => {
   }
 
   try {
+    console.log("--- Strategy Engine Invoked ---");
+
     // Create a Supabase client with the appropriate permissions
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
@@ -24,43 +26,56 @@ Deno.serve(async (req) => {
     );
 
     // 1. Fetch all strategies that are currently 'running'
+    console.log("Fetching running strategies...");
     const { data: strategies, error: strategiesError } = await supabase
       .from("strategies")
       .select("id, user_id, name, symbols")
       .eq("status", "running");
 
     if (strategiesError) {
+      console.error("Error fetching strategies:", strategiesError);
       throw strategiesError;
     }
 
     if (!strategies || strategies.length === 0) {
+      console.log("No active strategies found.");
       return new Response(JSON.stringify({ message: "No active strategies to process." }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
         status: 200,
       });
     }
 
+    console.log(`Found ${strategies.length} running strategies.`, strategies);
+
     const finnhubApiKey = Deno.env.get("FINNHUB_API_KEY");
     if (!finnhubApiKey) {
+      console.error("FINNHUB_API_KEY is not set.");
       throw new Error("FINNHUB_API_KEY is not set in environment variables.");
     }
+    console.log("Finnhub API key found.");
 
     // Process each strategy
     for (const strategy of strategies) {
+      console.log(`Processing strategy: "${strategy.name}" (ID: ${strategy.id})`);
       for (const symbol of strategy.symbols) {
+        console.log(`- Checking symbol: ${symbol}`);
+        
         // 2. Fetch live market data from Finnhub
-        const res = await fetch(
-          `https://finnhub.io/api/v1/quote?symbol=${symbol}&token=${finnhubApiKey}`,
-        );
+        const finnhubUrl = `https://finnhub.io/api/v1/quote?symbol=${symbol}&token=${finnhubApiKey}`;
+        console.log(`  Fetching data from Finnhub: ${finnhubUrl.replace(finnhubApiKey, '***')}`);
+        const res = await fetch(finnhubUrl);
         const quote = await res.json();
+        console.log("  Finnhub response:", quote);
+
         const currentPrice = quote.c;
+        console.log(`  Current price for ${symbol}: ${currentPrice}`);
 
         // 3. Evaluate the strategy's logic
         //    !!!! IMPORTANT !!!!
-        //    This is a placeholder logic. In a real scenario, you would parse
-        //    the strategy's description or have structured conditions to evaluate.
-        //    For this example, we'll create an alert if the price is valid.
+        //    This is a placeholder logic. It does NOT evaluate the complex conditions from your UI yet.
+        //    It simply checks if a valid price was returned.
         if (currentPrice > 0) {
+          console.log(`  Price is valid. Attempting to create alert...`);
           // 4. Create an alert in the database
           const newAlert = {
             user_id: strategy.user_id,
@@ -76,17 +91,23 @@ Deno.serve(async (req) => {
             .insert(newAlert);
 
           if (insertError) {
-            console.error(`Failed to insert alert for ${symbol}:`, insertError);
+            console.error(`  Failed to insert alert for ${symbol}:`, insertError);
+          } else {
+            console.log(`  Successfully inserted alert for ${symbol}.`);
           }
+        } else {
+          console.log(`  Price for ${symbol} is not valid or 0. Skipping alert creation.`);
         }
       }
     }
 
+    console.log("--- Strategy Engine Finished ---");
     return new Response(JSON.stringify({ message: "Strategies processed successfully." }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
       status: 200,
     });
   } catch (error) {
+    console.error("An unexpected error occurred:", error);
     return new Response(JSON.stringify({ error: error.message }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
       status: 500,
