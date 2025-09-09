@@ -20,7 +20,14 @@ import { toast } from "sonner";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StrategyEditor } from "@/components/StrategyEditor";
 
-// Define the type for a strategy
+// Define the type for a strategy condition
+export interface StrategyCondition {
+  indicator: string;
+  operator: string;
+  value: string;
+}
+
+// Update the Strategy type
 export interface Strategy {
   id: string;
   user_id: string;
@@ -29,6 +36,7 @@ export interface Strategy {
   status: 'running' | 'stopped' | 'degraded';
   timeframe: string;
   symbols: string[];
+  conditions: StrategyCondition[] | null; // Can be an array of conditions
   created_at: string;
 }
 
@@ -38,18 +46,21 @@ const strategyTemplates = [
     description: "Buy when the 14-period RSI on the 1-hour chart drops below 30 for AAPL or GOOGL.",
     timeframe: "1h",
     symbols: "AAPL, GOOGL",
+    conditions: [{ indicator: 'RSI', operator: '<', value: '30' }]
   },
   {
     name: "Moving Average Crossover",
     description: "Generate a buy signal when the 50-day moving average crosses above the 200-day moving average for SPY.",
     timeframe: "1d",
     symbols: "SPY",
+    conditions: [{ indicator: 'SMA50', operator: 'crosses_above', value: 'SMA200' }]
   },
   {
     name: "Volatility Breakout",
     description: "Enter a long position when the price of BTC/USD breaks above the upper Bollinger Band on the 4-hour chart.",
     timeframe: "4h",
     symbols: "BTC/USD",
+    conditions: [{ indicator: 'Price', operator: '>', value: 'Upper Bollinger Band' }]
   },
 ];
 
@@ -118,7 +129,7 @@ const Strategies = () => {
         // Update existing strategy
         const { error } = await supabase
           .from('strategies')
-          .update({ ...strategyData, symbols: strategyData.symbols })
+          .update({ ...strategyData }) // conditions are now part of strategyData
           .eq('id', editingStrategy.id);
         if (error) throw error;
         toast.success("Strategy updated successfully!");
@@ -127,7 +138,6 @@ const Strategies = () => {
         const { error } = await supabase.from('strategies').insert([{ 
           ...strategyData, 
           user_id: user.id,
-          symbols: strategyData.symbols,
         }]);
         if (error) throw error;
         toast.success("Strategy created successfully!");
@@ -158,13 +168,14 @@ const Strategies = () => {
 
   const cloneStrategy = async (strategyToClone: Strategy) => {
     try {
-      const { name, description, timeframe, symbols } = strategyToClone;
+      const { name, description, timeframe, symbols, conditions } = strategyToClone;
       const newStrategyData = {
         user_id: user!.id,
         name: `${name} (Copy)`,
         description,
         timeframe,
         symbols,
+        conditions,
         status: 'stopped'
       };
 
@@ -240,7 +251,6 @@ const Strategies = () => {
         </Button>
       </div>
 
-      {/* Strategy Templates */}
       <div className="mb-12">
         <h2 className="text-2xl font-bold mb-4">Start with a Template</h2>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -283,7 +293,7 @@ const Strategies = () => {
       ) : strategies.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {strategies.map((strategy) => (
-            <Card key={strategy.id} className="hover:shadow-lg transition-shadow">
+            <Card key={strategy.id} className="hover:shadow-lg transition-shadow flex flex-col">
               <CardHeader className="pb-2">
                 <div className="flex justify-between items-start">
                   <CardTitle className="text-lg">{strategy.name}</CardTitle>
@@ -293,15 +303,23 @@ const Strategies = () => {
                 </div>
                 <p className="text-sm text-muted-foreground h-10 overflow-hidden">{strategy.description}</p>
               </CardHeader>
-              <CardContent>
-                <div className="flex flex-wrap gap-1 mb-4 h-6 overflow-hidden">
-                  {strategy.symbols.map((symbol, index) => (
-                    <Badge key={index} variant="secondary">{symbol}</Badge>
-                  ))}
-                </div>
-                
-                <div className="text-sm mb-4">
-                  <span className="font-medium">Timeframe:</span> {strategy.timeframe}
+              <CardContent className="flex-grow flex flex-col justify-between">
+                <div>
+                  <div className="mb-4">
+                    <h4 className="text-sm font-semibold mb-1">Conditions</h4>
+                    {strategy.conditions && strategy.conditions.length > 0 ? (
+                      <div className="text-sm p-2 bg-muted rounded-md">
+                        <code>{strategy.conditions[0].indicator} {strategy.conditions[0].operator} {strategy.conditions[0].value}</code>
+                      </div>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">No conditions set.</p>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap gap-1 mb-4 h-6 overflow-hidden">
+                    {strategy.symbols.map((symbol, index) => (
+                      <Badge key={index} variant="secondary">{symbol}</Badge>
+                    ))}
+                  </div>
                 </div>
                 
                 <div className="flex justify-end items-center gap-2">

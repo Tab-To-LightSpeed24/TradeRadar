@@ -17,7 +17,8 @@ import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import { Skeleton } from "@/components/ui/skeleton";
-import { formatDistanceToNow } from 'date-fns';
+import { format, parseISO } from 'date-fns';
+import { PnLChart } from "@/components/PnLChart";
 
 interface Strategy {
   id: string;
@@ -35,6 +36,11 @@ interface Alert {
   created_at: string;
 }
 
+interface PnLDataPoint {
+  date: string;
+  pnl: number;
+}
+
 const Dashboard = () => {
   const { user, loading: authLoading } = useAuth();
   const [strategies, setStrategies] = useState<Strategy[]>([]);
@@ -42,6 +48,7 @@ const Dashboard = () => {
   const [loading, setLoading] = useState(true);
   const [totalPnl, setTotalPnl] = useState(0);
   const [winRate, setWinRate] = useState(0);
+  const [pnlData, setPnlData] = useState<PnLDataPoint[]>([]);
 
   const fetchData = useCallback(async () => {
     if (!user) return;
@@ -50,7 +57,7 @@ const Dashboard = () => {
       const [strategiesRes, alertsRes, tradesRes] = await Promise.all([
         supabase.from('strategies').select('id, name, description, status').eq('user_id', user.id),
         supabase.from('alerts').select('*').eq('user_id', user.id).order('created_at', { ascending: false }).limit(5),
-        supabase.from('trades').select('pnl').eq('user_id', user.id)
+        supabase.from('trades').select('pnl, created_at').eq('user_id', user.id).order('created_at', { ascending: true })
       ]);
 
       if (strategiesRes.error) throw strategiesRes.error;
@@ -65,6 +72,17 @@ const Dashboard = () => {
       const winners = trades.filter(t => (t.pnl || 0) > 0).length;
       setTotalPnl(total);
       setWinRate(trades.length > 0 ? Math.round((winners / trades.length) * 100) : 0);
+
+      // Process data for P&L chart
+      let cumulativePnl = 0;
+      const chartData = trades.map(trade => {
+        cumulativePnl += trade.pnl || 0;
+        return {
+          date: format(parseISO(trade.created_at), 'MMM d'),
+          pnl: cumulativePnl,
+        };
+      });
+      setPnlData(chartData);
 
     } catch (error: any) {
       toast.error("Failed to fetch dashboard data:", error.message);
@@ -123,6 +141,7 @@ const Dashboard = () => {
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
           {[...Array(4)].map((_, i) => <Skeleton key={i} className="h-24" />)}
         </div>
+        <Skeleton className="h-96 w-full mb-8" />
         <Skeleton className="h-8 w-56 mb-4" />
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {[...Array(3)].map((_, i) => <Skeleton key={i} className="h-48" />)}
@@ -205,75 +224,82 @@ const Dashboard = () => {
         </Card>
       </div>
 
-      {/* Strategy Cards */}
+      {/* P&L Chart */}
       <div className="mb-8">
-        <h2 className="text-2xl font-bold mb-4">Trading Strategies</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {strategies.map((strategy) => (
-            <Card key={strategy.id} className="hover:shadow-lg transition-shadow">
-              <CardHeader className="pb-2">
-                <div className="flex justify-between items-start">
-                  <CardTitle className="text-lg">{strategy.name}</CardTitle>
-                  <Badge className={`${getStatusColor(strategy.status)} text-white`}>
-                    {getStatusText(strategy.status)}
-                  </Badge>
-                </div>
-                <p className="text-sm text-muted-foreground">{strategy.description}</p>
-              </CardHeader>
-              <CardContent>
-                <div className="flex justify-end items-center">
-                  <Button 
-                    size="sm" 
-                    onClick={() => toggleStrategy(strategy.id, strategy.status)}
-                    className={strategy.status === "running" ? "bg-red-500 hover:bg-red-600" : ""}
-                  >
-                    {strategy.status === "running" ? (
-                      <>
-                        <Pause className="w-4 h-4 mr-2" /> Stop
-                      </>
-                    ) : (
-                      <>
-                        <Play className="w-4 h-4 mr-2" /> Start
-                      </>
-                    )}
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+        <PnLChart data={pnlData} />
       </div>
 
-      {/* Recent Alerts */}
-      <div>
-        <h2 className="text-2xl font-bold mb-4">Recent Alerts</h2>
-        <Card>
-          <CardContent className="p-0">
-            <div className="divide-y">
-              {alerts.length > 0 ? alerts.map((alert) => (
-                <div key={alert.id} className="p-4 flex items-center justify-between">
-                  <div>
-                    <div className="font-medium">{alert.strategy_name}</div>
-                    <div className="text-sm text-muted-foreground">
-                      {alert.symbol} • {formatDistanceToNow(new Date(alert.created_at), { addSuffix: true })}
-                    </div>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        {/* Strategy Cards */}
+        <div className="mb-8 lg:mb-0">
+          <h2 className="text-2xl font-bold mb-4">Trading Strategies</h2>
+          <div className="space-y-4">
+            {strategies.map((strategy) => (
+              <Card key={strategy.id} className="hover:shadow-lg transition-shadow">
+                <CardHeader className="pb-2">
+                  <div className="flex justify-between items-start">
+                    <CardTitle className="text-lg">{strategy.name}</CardTitle>
+                    <Badge className={`${getStatusColor(strategy.status)} text-white`}>
+                      {getStatusText(strategy.status)}
+                    </Badge>
                   </div>
-                  <div className="flex items-center gap-4">
-                    <div className="text-right">
-                      <div className="font-medium">${alert.price}</div>
-                      <div className="text-sm text-muted-foreground">{alert.type}</div>
-                    </div>
-                    <Button variant="outline" size="sm">
-                      View Chart
+                  <p className="text-sm text-muted-foreground">{strategy.description}</p>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex justify-end items-center">
+                    <Button 
+                      size="sm" 
+                      onClick={() => toggleStrategy(strategy.id, strategy.status)}
+                      className={strategy.status === "running" ? "bg-red-500 hover:bg-red-600" : ""}
+                    >
+                      {strategy.status === "running" ? (
+                        <>
+                          <Pause className="w-4 h-4 mr-2" /> Stop
+                        </>
+                      ) : (
+                        <>
+                          <Play className="w-4 h-4 mr-2" /> Start
+                        </>
+                      )}
                     </Button>
                   </div>
-                </div>
-              )) : (
-                <div className="p-8 text-center text-muted-foreground">No recent alerts.</div>
-              )}
-            </div>
-          </CardContent>
-        </Card>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </div>
+
+        {/* Recent Alerts */}
+        <div>
+          <h2 className="text-2xl font-bold mb-4">Recent Alerts</h2>
+          <Card>
+            <CardContent className="p-0">
+              <div className="divide-y">
+                {alerts.length > 0 ? alerts.map((alert) => (
+                  <div key={alert.id} className="p-4 flex items-center justify-between">
+                    <div>
+                      <div className="font-medium">{alert.strategy_name}</div>
+                      <div className="text-sm text-muted-foreground">
+                        {alert.symbol} • {format(parseISO(alert.created_at), 'MMM d, h:mm a')}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <div className="text-right">
+                        <div className="font-medium">${alert.price}</div>
+                        <div className="text-sm text-muted-foreground">{alert.type}</div>
+                      </div>
+                      <Button variant="outline" size="sm">
+                        View Chart
+                      </Button>
+                    </div>
+                  </div>
+                )) : (
+                  <div className="p-8 text-center text-muted-foreground">No recent alerts.</div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       </div>
     </div>
   );

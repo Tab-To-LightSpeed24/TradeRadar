@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -11,7 +11,9 @@ import {
   Filter,
   Edit,
   Trash2,
-  Loader2
+  Loader2,
+  TrendingUp,
+  Target
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import {
@@ -154,10 +156,47 @@ const Journal = () => {
     return matchesFilter && matchesSearch;
   });
 
-  const totalTrades = trades.length;
-  const winningTrades = trades.filter(t => (t.pnl || 0) > 0).length;
-  const winRate = totalTrades > 0 ? Math.round((winningTrades / totalTrades) * 100) : 0;
-  const totalPnL = trades.reduce((sum, trade) => sum + (trade.pnl || 0), 0);
+  const analytics = useMemo(() => {
+    if (trades.length === 0) {
+      return {
+        totalTrades: 0,
+        winningTrades: 0,
+        winRate: 0,
+        totalPnL: 0,
+        bestStrategy: { name: "N/A", pnl: 0 },
+        bestSymbol: { name: "N/A", pnl: 0 },
+      };
+    }
+
+    const totalTrades = trades.length;
+    const winningTrades = trades.filter(t => (t.pnl || 0) > 0).length;
+    const winRate = totalTrades > 0 ? Math.round((winningTrades / totalTrades) * 100) : 0;
+    const totalPnL = trades.reduce((sum, trade) => sum + (trade.pnl || 0), 0);
+
+    const strategyPnl = trades.reduce((acc, trade) => {
+      const strategyName = trade.strategy || "Uncategorized";
+      acc[strategyName] = (acc[strategyName] || 0) + (trade.pnl || 0);
+      return acc;
+    }, {} as Record<string, number>);
+
+    const symbolPnl = trades.reduce((acc, trade) => {
+      const symbolName = trade.symbol || "Unknown";
+      acc[symbolName] = (acc[symbolName] || 0) + (trade.pnl || 0);
+      return acc;
+    }, {} as Record<string, number>);
+
+    const bestStrategyName = Object.keys(strategyPnl).reduce((a, b) => strategyPnl[a] > strategyPnl[b] ? a : b, "N/A");
+    const bestSymbolName = Object.keys(symbolPnl).reduce((a, b) => symbolPnl[a] > symbolPnl[b] ? a : b, "N/A");
+
+    return {
+      totalTrades,
+      winningTrades,
+      winRate,
+      totalPnL,
+      bestStrategy: { name: bestStrategyName, pnl: strategyPnl[bestStrategyName] || 0 },
+      bestSymbol: { name: bestSymbolName, pnl: symbolPnl[bestSymbolName] || 0 },
+    };
+  }, [trades]);
 
   if (authLoading) {
     return (
@@ -241,17 +280,32 @@ const Journal = () => {
       </div>
 
       {/* Summary Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-        <Card><CardContent className="pt-6"><div><p className="text-sm text-muted-foreground">Total Trades</p><p className="text-2xl font-bold">{totalTrades}</p></div></CardContent></Card>
-        <Card><CardContent className="pt-6"><div><p className="text-sm text-muted-foreground">Win Rate</p><p className="text-2xl font-bold">{winRate}%</p></div></CardContent></Card>
-        <Card><CardContent className="pt-6"><div><p className="text-sm text-muted-foreground">Total P&L</p><p className={`text-2xl font-bold ${totalPnL >= 0 ? "text-green-500" : "text-red-500"}`}>${totalPnL.toFixed(2)}</p></div></CardContent></Card>
-        <Card><CardContent className="pt-6"><div><p className="text-sm text-muted-foreground">Avg. Trade</p><p className={`text-2xl font-bold ${totalTrades > 0 && (totalPnL / totalTrades) >= 0 ? "text-green-500" : "text-red-500"}`}>${(totalTrades > 0 ? (totalPnL / totalTrades).toFixed(2) : "0.00")}</p></div></CardContent></Card>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
+        <Card><CardHeader><CardTitle>Total Trades</CardTitle></CardHeader><CardContent><p className="text-3xl font-bold">{analytics.totalTrades}</p></CardContent></Card>
+        <Card><CardHeader><CardTitle>Win Rate</CardTitle></CardHeader><CardContent><p className="text-3xl font-bold">{analytics.winRate}%</p></CardContent></Card>
+        <Card><CardHeader><CardTitle>Total P&L</CardTitle></CardHeader><CardContent><p className={`text-3xl font-bold ${analytics.totalPnL >= 0 ? "text-green-500" : "text-red-500"}`}>${analytics.totalPnL.toFixed(2)}</p></CardContent></Card>
+        <Card><CardHeader><CardTitle>Avg. Trade P&L</CardTitle></CardHeader><CardContent><p className={`text-3xl font-bold ${analytics.totalTrades > 0 && (analytics.totalPnL / analytics.totalTrades) >= 0 ? "text-green-500" : "text-red-500"}`}>${(analytics.totalTrades > 0 ? (analytics.totalPnL / analytics.totalTrades).toFixed(2) : "0.00")}</p></CardContent></Card>
+        <Card>
+          <CardHeader><CardTitle className="flex items-center gap-2"><TrendingUp className="w-5 h-5" /> Best Strategy</CardTitle></CardHeader>
+          <CardContent>
+            <p className="text-xl font-bold">{analytics.bestStrategy.name}</p>
+            <p className={`text-lg font-medium ${analytics.bestStrategy.pnl >= 0 ? "text-green-500" : "text-red-500"}`}>${analytics.bestStrategy.pnl.toFixed(2)}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader><CardTitle className="flex items-center gap-2"><Target className="w-5 h-5" /> Best Symbol</CardTitle></CardHeader>
+          <CardContent>
+            <p className="text-xl font-bold">{analytics.bestSymbol.name}</p>
+            <p className={`text-lg font-medium ${analytics.bestSymbol.pnl >= 0 ? "text-green-500" : "text-red-500"}`}>${analytics.bestSymbol.pnl.toFixed(2)}</p>
+          </CardContent>
+        </Card>
       </div>
 
-      {/* Controls */}
-      <Card className="mb-6">
-        <CardContent className="p-4">
-          <div className="flex flex-col md:flex-row gap-4">
+      {/* Controls and Trades Table */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Trade History</CardTitle>
+          <div className="pt-4 flex flex-col md:flex-row gap-4">
             <div className="flex-1"><Input placeholder="Search trades..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} /></div>
             <div className="flex gap-2">
               <Select value={filter} onValueChange={setFilter}>
@@ -265,12 +319,7 @@ const Journal = () => {
               <Button variant="outline"><Filter className="w-4 h-4" /></Button>
             </div>
           </div>
-        </CardContent>
-      </Card>
-
-      {/* Trades Table */}
-      <Card>
-        <CardHeader><CardTitle>Trade History</CardTitle></CardHeader>
+        </CardHeader>
         <CardContent className="p-0">
           <div className="divide-y">
             {loading ? (
