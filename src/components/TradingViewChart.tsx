@@ -22,11 +22,12 @@ const TradingViewChart: React.FC<TradingViewChartProps> = ({ data, timeframe, sy
   useEffect(() => {
     if (!chartContainerRef.current) return;
 
-    // Resolve CSS variables to actual colors
-    const computedStyle = getComputedStyle(document.documentElement);
-    const textColor = `hsl(${computedStyle.getPropertyValue('--foreground').trim()})`;
-    const backgroundColor = `hsl(${computedStyle.getPropertyValue('--background').trim()})`;
-    const borderColor = `hsl(${computedStyle.getPropertyValue('--border').trim()})`;
+    // Resolve CSS variables to actual colors by getting the computed style from the body.
+    // This returns RGB values which are universally parsable.
+    const computedStyle = getComputedStyle(document.body);
+    const textColor = computedStyle.color;
+    const backgroundColor = computedStyle.backgroundColor;
+    const borderColor = computedStyle.borderTopColor; // Any border side will do
 
     // Cleanup previous chart instance if it exists
     if (chartRef.current) {
@@ -56,11 +57,11 @@ const TradingViewChart: React.FC<TradingViewChartProps> = ({ data, timeframe, sy
     chartRef.current = chart;
 
     const candlestickSeries = chart.addCandlestickSeries({
-      upColor: 'hsl(142.1 76.2% 36.3%)',
-      downColor: 'hsl(0 84.2% 60.2%)',
+      upColor: '#22c55e', // Tailwind green-500
+      downColor: '#ef4444', // Tailwind red-500
       borderVisible: false,
-      wickUpColor: 'hsl(142.1 76.2% 36.3%)',
-      wickDownColor: 'hsl(0 84.2% 60.2%)',
+      wickUpColor: '#22c55e',
+      wickDownColor: '#ef4444',
     });
     candlestickSeriesRef.current = candlestickSeries;
 
