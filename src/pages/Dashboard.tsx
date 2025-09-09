@@ -1,77 +1,98 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { 
   Play, 
   Pause, 
-  AlertTriangle, 
   TrendingUp, 
   BarChart3,
   Bell,
-  Settings
+  Settings,
+  Loader2
 } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/lib/supabase";
+import { toast } from "sonner";
+import { Skeleton } from "@/components/ui/skeleton";
+import { formatDistanceToNow } from 'date-fns';
+
+interface Strategy {
+  id: string;
+  name: string;
+  description: string;
+  status: 'running' | 'stopped' | 'degraded';
+}
+
+interface Alert {
+  id: string;
+  strategy_name: string;
+  symbol: string;
+  price: number | null;
+  type: string | null;
+  created_at: string;
+}
 
 const Dashboard = () => {
-  const [strategies, setStrategies] = useState([
-    {
-      id: 1,
-      name: "Bullish Breakout",
-      description: "Buy when price breaks above 20-day high with volume spike",
-      status: "running",
-      alertsToday: 3,
-      winRate: 68,
-      pnl: 1250
-    },
-    {
-      id: 2,
-      name: "Mean Reversion",
-      description: "Sell oversold RSI(2) < 10 with bullish divergence",
-      status: "stopped",
-      alertsToday: 0,
-      winRate: 52,
-      pnl: -250
-    },
-    {
-      id: 3,
-      name: "Volatility Breakout",
-      description: "Enter long when volatility expands beyond 20-day average",
-      status: "degraded",
-      alertsToday: 1,
-      winRate: 75,
-      pnl: 890
-    }
-  ]);
+  const { user, loading: authLoading } = useAuth();
+  const [strategies, setStrategies] = useState<Strategy[]>([]);
+  const [alerts, setAlerts] = useState<Alert[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [totalPnl, setTotalPnl] = useState(0);
+  const [winRate, setWinRate] = useState(0);
 
-  const [alerts, setAlerts] = useState([
-    {
-      id: 1,
-      strategy: "Bullish Breakout",
-      symbol: "AAPL",
-      time: "2 min ago",
-      price: 172.45,
-      type: "Buy Signal",
-      isRead: false
-    },
-    {
-      id: 2,
-      strategy: "Volatility Breakout", 
-      symbol: "TSLA",
-      time: "15 min ago",
-      price: 245.30,
-      type: "Sell Signal",
-      isRead: true
-    }
-  ]);
+  const fetchData = useCallback(async () => {
+    if (!user) return;
+    setLoading(true);
+    try {
+      const [strategiesRes, alertsRes, tradesRes] = await Promise.all([
+        supabase.from('strategies').select('id, name, description, status').eq('user_id', user.id),
+        supabase.from('alerts').select('*').eq('user_id', user.id).order('created_at', { ascending: false }).limit(5),
+        supabase.from('trades').select('pnl').eq('user_id', user.id)
+      ]);
 
-  const toggleStrategy = (id: number) => {
-    setStrategies(strategies.map(strategy => 
-      strategy.id === id 
-        ? { ...strategy, status: strategy.status === "running" ? "stopped" : "running" }
-        : strategy
-    ));
+      if (strategiesRes.error) throw strategiesRes.error;
+      if (alertsRes.error) throw alertsRes.error;
+      if (tradesRes.error) throw tradesRes.error;
+
+      setStrategies(strategiesRes.data as Strategy[]);
+      setAlerts(alertsRes.data as Alert[]);
+      
+      const trades = tradesRes.data || [];
+      const total = trades.reduce((sum, trade) => sum + (trade.pnl || 0), 0);
+      const winners = trades.filter(t => (t.pnl || 0) > 0).length;
+      setTotalPnl(total);
+      setWinRate(trades.length > 0 ? Math.round((winners / trades.length) * 100) : 0);
+
+    } catch (error: any) {
+      toast.error("Failed to fetch dashboard data:", error.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    if (!authLoading) {
+      fetchData();
+    }
+  }, [authLoading, fetchData]);
+
+  const toggleStrategy = async (id: string, currentStatus: string) => {
+    const newStatus = currentStatus === "running" ? "stopped" : "running";
+    try {
+      const { error } = await supabase
+        .from('strategies')
+        .update({ status: newStatus })
+        .eq('id', id);
+      
+      if (error) throw error;
+      toast.success(`Strategy ${newStatus === 'running' ? 'started' : 'stopped'}.`);
+      fetchData(); // Refresh data
+    } catch (error: any) {
+      toast.error("Failed to update strategy status:", error.message);
+    }
   };
 
   const getStatusColor = (status: string) => {
@@ -92,6 +113,33 @@ const Dashboard = () => {
     }
   };
 
+  if (authLoading || (loading && !strategies.length)) {
+    return (
+      <div className="container mx-auto py-8">
+        <div className="flex justify-between items-center mb-8">
+          <Skeleton className="h-9 w-64" />
+          <Skeleton className="h-10 w-28" />
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+          {[...Array(4)].map((_, i) => <Skeleton key={i} className="h-24" />)}
+        </div>
+        <Skeleton className="h-8 w-56 mb-4" />
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {[...Array(3)].map((_, i) => <Skeleton key={i} className="h-48" />)}
+        </div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <div className="container mx-auto py-8 text-center">
+        <h2 className="text-2xl font-bold mb-4">Welcome to TradeRadar</h2>
+        <p className="text-muted-foreground">Please log in to view your dashboard.</p>
+      </div>
+    );
+  }
+
   return (
     <div className="container mx-auto py-8">
       <div className="flex justify-between items-center mb-8">
@@ -111,7 +159,7 @@ const Dashboard = () => {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">Active Strategies</p>
-                <p className="text-2xl font-bold">2/3</p>
+                <p className="text-2xl font-bold">{strategies.filter(s => s.status === 'running').length}/{strategies.length}</p>
               </div>
               <BarChart3 className="h-8 w-8 text-blue-500" />
             </div>
@@ -122,8 +170,8 @@ const Dashboard = () => {
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground">Today's Alerts</p>
-                <p className="text-2xl font-bold">4</p>
+                <p className="text-sm text-muted-foreground">Recent Alerts</p>
+                <p className="text-2xl font-bold">{alerts.length}</p>
               </div>
               <Bell className="h-8 w-8 text-yellow-500" />
             </div>
@@ -135,7 +183,7 @@ const Dashboard = () => {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">Win Rate</p>
-                <p className="text-2xl font-bold">62%</p>
+                <p className="text-2xl font-bold">{winRate}%</p>
               </div>
               <TrendingUp className="h-8 w-8 text-green-500" />
             </div>
@@ -146,10 +194,12 @@ const Dashboard = () => {
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground">P&L (30d)</p>
-                <p className="text-2xl font-bold text-green-500">+$2,140</p>
+                <p className="text-sm text-muted-foreground">P&L (All Time)</p>
+                <p className={`text-2xl font-bold ${totalPnl >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                  {totalPnl >= 0 ? '+' : ''}${totalPnl.toFixed(2)}
+                </p>
               </div>
-              <AlertTriangle className="h-8 w-8 text-green-500" />
+              <TrendingUp className={`h-8 w-8 ${totalPnl >= 0 ? 'text-green-500' : 'text-red-500'}`} />
             </div>
           </CardContent>
         </Card>
@@ -171,24 +221,10 @@ const Dashboard = () => {
                 <p className="text-sm text-muted-foreground">{strategy.description}</p>
               </CardHeader>
               <CardContent>
-                <div className="flex justify-between items-center mb-4">
-                  <div className="text-sm">
-                    <span className="font-medium">Alerts today:</span> {strategy.alertsToday}
-                  </div>
-                  <div className="text-sm">
-                    <span className="font-medium">Win rate:</span> {strategy.winRate}%
-                  </div>
-                </div>
-                <div className="flex justify-between items-center">
-                  <div className="text-sm">
-                    <span className="font-medium">P&L:</span> 
-                    <span className={strategy.pnl >= 0 ? "text-green-500 ml-1" : "text-red-500 ml-1"}>
-                      ${strategy.pnl}
-                    </span>
-                  </div>
+                <div className="flex justify-end items-center">
                   <Button 
                     size="sm" 
-                    onClick={() => toggleStrategy(strategy.id)}
+                    onClick={() => toggleStrategy(strategy.id, strategy.status)}
                     className={strategy.status === "running" ? "bg-red-500 hover:bg-red-600" : ""}
                   >
                     {strategy.status === "running" ? (
@@ -214,12 +250,12 @@ const Dashboard = () => {
         <Card>
           <CardContent className="p-0">
             <div className="divide-y">
-              {alerts.map((alert) => (
+              {alerts.length > 0 ? alerts.map((alert) => (
                 <div key={alert.id} className="p-4 flex items-center justify-between">
                   <div>
-                    <div className="font-medium">{alert.strategy}</div>
+                    <div className="font-medium">{alert.strategy_name}</div>
                     <div className="text-sm text-muted-foreground">
-                      {alert.symbol} • {alert.time}
+                      {alert.symbol} • {formatDistanceToNow(new Date(alert.created_at), { addSuffix: true })}
                     </div>
                   </div>
                   <div className="flex items-center gap-4">
@@ -232,7 +268,9 @@ const Dashboard = () => {
                     </Button>
                   </div>
                 </div>
-              ))}
+              )) : (
+                <div className="p-8 text-center text-muted-foreground">No recent alerts.</div>
+              )}
             </div>
           </CardContent>
         </Card>

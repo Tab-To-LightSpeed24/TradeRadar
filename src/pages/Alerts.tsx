@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -8,10 +8,10 @@ import {
   Bell,
   BellOff,
   Check,
-  X,
   Filter,
   Download,
-  Eye
+  Eye,
+  Loader2
 } from "lucide-react";
 import {
   Select,
@@ -21,76 +21,123 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
+import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/lib/supabase";
+import { toast } from "sonner";
+import { Skeleton } from "@/components/ui/skeleton";
+import { formatDistanceToNow } from 'date-fns';
+
+// Define the type for an alert
+interface Alert {
+  id: string;
+  user_id: string;
+  strategy_name: string;
+  symbol: string;
+  price: number | null;
+  type: string | null;
+  is_read: boolean;
+  created_at: string;
+}
 
 const Alerts = () => {
-  const [alerts, setAlerts] = useState([
-    {
-      id: 1,
-      strategy: "Bullish Breakout",
-      symbol: "AAPL",
-      time: "2023-06-15 09:32:15",
-      price: 172.45,
-      type: "Buy Signal",
-      isRead: false,
-      isTelegramSent: true
-    },
-    {
-      id: 2,
-      strategy: "Volatility Breakout", 
-      symbol: "TSLA",
-      time: "2023-06-15 08:45:30",
-      price: 245.30,
-      type: "Sell Signal",
-      isRead: true,
-      isTelegramSent: true
-    },
-    {
-      id: 3,
-      strategy: "Mean Reversion",
-      symbol: "NVDA",
-      time: "2023-06-15 07:12:45",
-      price: 420.75,
-      type: "Buy Signal",
-      isRead: false,
-      isTelegramSent: false
-    },
-    {
-      id: 4,
-      strategy: "Bullish Breakout",
-      symbol: "MSFT",
-      time: "2023-06-14 16:55:22",
-      price: 340.20,
-      type: "Sell Signal",
-      isRead: true,
-      isTelegramSent: true
-    }
-  ]);
-
+  const { user, loading: authLoading } = useAuth();
+  const [alerts, setAlerts] = useState<Alert[]>([]);
+  const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("all");
   const [searchTerm, setSearchTerm] = useState("");
 
-  const markAsRead = (id: number) => {
-    setAlerts(alerts.map(alert => 
-      alert.id === id ? { ...alert, isRead: true } : alert
-    ));
+  const fetchAlerts = useCallback(async () => {
+    if (!user) return;
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('alerts')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setAlerts(data as Alert[]);
+    } catch (error: any) {
+      toast.error("Failed to fetch alerts:", error.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    if (!authLoading) {
+      fetchAlerts();
+    }
+  }, [authLoading, fetchAlerts]);
+
+  const markAsRead = async (id: string) => {
+    try {
+      const { error } = await supabase
+        .from('alerts')
+        .update({ is_read: true })
+        .eq('id', id);
+      
+      if (error) throw error;
+      setAlerts(alerts.map(alert => 
+        alert.id === id ? { ...alert, is_read: true } : alert
+      ));
+      toast.success("Alert marked as read.");
+    } catch (error: any) {
+      toast.error("Failed to update alert:", error.message);
+    }
   };
 
-  const markAllAsRead = () => {
-    setAlerts(alerts.map(alert => ({ ...alert, isRead: true })));
+  const markAllAsRead = async () => {
+    try {
+      const unreadAlertIds = alerts.filter(a => !a.is_read).map(a => a.id);
+      if (unreadAlertIds.length === 0) {
+        toast.info("All alerts are already read.");
+        return;
+      }
+      const { error } = await supabase
+        .from('alerts')
+        .update({ is_read: true })
+        .in('id', unreadAlertIds);
+
+      if (error) throw error;
+      setAlerts(alerts.map(alert => ({ ...alert, is_read: true })));
+      toast.success("All alerts marked as read.");
+    } catch (error: any)
+{
+      toast.error("Failed to mark all alerts as read:", error.message);
+    }
   };
 
   const filteredAlerts = alerts.filter(alert => {
     const matchesFilter = filter === "all" || 
-      (filter === "unread" && !alert.isRead) || 
-      (filter === "read" && alert.isRead);
+      (filter === "unread" && !alert.is_read) || 
+      (filter === "read" && alert.is_read);
     
     const matchesSearch = searchTerm === "" || 
-      alert.strategy.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      alert.strategy_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       alert.symbol.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      alert.type.toLowerCase().includes(searchTerm.toLowerCase());
+      (alert.type && alert.type.toLowerCase().includes(searchTerm.toLowerCase()));
     
     return matchesFilter && matchesSearch;
   });
+
+  if (authLoading) {
+    return (
+      <div className="container mx-auto py-8 flex justify-center items-center">
+        <Loader2 className="h-8 w-8 animate-spin" />
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <div className="container mx-auto py-8 text-center">
+        <h2 className="text-2xl font-bold mb-4">Please log in</h2>
+        <p className="text-muted-foreground">You need to be logged in to view your alerts.</p>
+      </div>
+    );
+  }
 
   return (
     <div className="container mx-auto py-8">
@@ -139,7 +186,7 @@ const Alerts = () => {
       </Card>
 
       {/* Alert Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
         <Card>
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
@@ -157,21 +204,9 @@ const Alerts = () => {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">Unread Alerts</p>
-                <p className="text-2xl font-bold">{alerts.filter(a => !a.isRead).length}</p>
+                <p className="text-2xl font-bold">{alerts.filter(a => !a.is_read).length}</p>
               </div>
               <BellOff className="h-8 w-8 text-yellow-500" />
-            </div>
-          </CardContent>
-        </Card>
-        
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">Telegram Sent</p>
-                <p className="text-2xl font-bold">{alerts.filter(a => a.isTelegramSent).length}</p>
-              </div>
-              <Check className="h-8 w-8 text-green-500" />
             </div>
           </CardContent>
         </Card>
@@ -184,42 +219,40 @@ const Alerts = () => {
         </CardHeader>
         <CardContent className="p-0">
           <div className="divide-y">
-            {filteredAlerts.length > 0 ? (
+            {loading ? (
+              [...Array(3)].map((_, i) => (
+                <div key={i} className="p-4">
+                  <Skeleton className="h-5 w-3/4 mb-2" />
+                  <Skeleton className="h-4 w-1/2" />
+                </div>
+              ))
+            ) : filteredAlerts.length > 0 ? (
               filteredAlerts.map((alert) => (
-                <div key={alert.id} className={`p-4 flex items-center justify-between ${!alert.isRead ? 'bg-blue-50 dark:bg-blue-950/20' : ''}`}>
+                <div key={alert.id} className={`p-4 flex items-center justify-between ${!alert.is_read ? 'bg-blue-50 dark:bg-blue-950/20' : ''}`}>
                   <div className="flex items-center gap-4">
-                    {!alert.isRead && (
+                    {!alert.is_read && (
                       <div className="w-2 h-2 rounded-full bg-blue-500"></div>
                     )}
                     <div>
                       <div className="font-medium flex items-center gap-2">
-                        {alert.strategy}
+                        {alert.strategy_name}
                         <Badge variant="secondary">{alert.symbol}</Badge>
                       </div>
                       <div className="text-sm text-muted-foreground">
-                        {alert.time} • ${alert.price}
+                        {formatDistanceToNow(new Date(alert.created_at), { addSuffix: true })} • ${alert.price}
                       </div>
                     </div>
                   </div>
                   <div className="flex items-center gap-4">
-                    <Badge variant={alert.type.includes("Buy") ? "default" : "destructive"}>
+                    <Badge variant={alert.type?.includes("Buy") ? "default" : "destructive"}>
                       {alert.type}
                     </Badge>
                     <div className="flex items-center gap-2">
-                      {alert.isTelegramSent ? (
-                        <Badge variant="outline" className="text-green-500 border-green-500">
-                          Sent
-                        </Badge>
-                      ) : (
-                        <Badge variant="outline" className="text-yellow-500 border-yellow-500">
-                          Pending
-                        </Badge>
-                      )}
                       <Button 
                         variant="ghost" 
                         size="sm" 
                         onClick={() => markAsRead(alert.id)}
-                        disabled={alert.isRead}
+                        disabled={alert.is_read}
                       >
                         <Check className="w-4 h-4" />
                       </Button>
