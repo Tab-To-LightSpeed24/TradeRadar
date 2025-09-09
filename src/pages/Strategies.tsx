@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { 
@@ -11,26 +11,17 @@ import {
   Edit, 
   Trash2,
   Plus,
-  Loader2
+  Loader2,
+  Sparkles
 } from "lucide-react";
-import { Textarea } from "@/components/ui/textarea";
-import { Label } from "@/components/ui/label";
-import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import { Skeleton } from "@/components/ui/skeleton";
+import { StrategyEditor } from "@/components/StrategyEditor";
 
 // Define the type for a strategy
-interface Strategy {
+export interface Strategy {
   id: string;
   user_id: string;
   name: string;
@@ -41,17 +32,33 @@ interface Strategy {
   created_at: string;
 }
 
+const strategyTemplates = [
+  {
+    name: "RSI Oversold Bounce",
+    description: "Buy when the 14-period RSI on the 1-hour chart drops below 30 for AAPL or GOOGL.",
+    timeframe: "1h",
+    symbols: "AAPL, GOOGL",
+  },
+  {
+    name: "Moving Average Crossover",
+    description: "Generate a buy signal when the 50-day moving average crosses above the 200-day moving average for SPY.",
+    timeframe: "1d",
+    symbols: "SPY",
+  },
+  {
+    name: "Volatility Breakout",
+    description: "Enter a long position when the price of BTC/USD breaks above the upper Bollinger Band on the 4-hour chart.",
+    timeframe: "4h",
+    symbols: "BTC/USD",
+  },
+];
+
 const Strategies = () => {
   const { user, loading: authLoading } = useAuth();
   const [strategies, setStrategies] = useState<Strategy[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showCreator, setShowCreator] = useState(false);
-  const [newStrategy, setNewStrategy] = useState({
-    name: "",
-    description: "",
-    timeframe: "15m",
-    symbols: "",
-  });
+  const [isEditorOpen, setIsEditorOpen] = useState(false);
+  const [editingStrategy, setEditingStrategy] = useState<Strategy | null>(null);
 
   const fetchStrategies = useCallback(async () => {
     if (!user) return;
@@ -77,6 +84,61 @@ const Strategies = () => {
       fetchStrategies();
     }
   }, [authLoading, fetchStrategies]);
+
+  const handleNewStrategy = () => {
+    setEditingStrategy(null);
+    setIsEditorOpen(true);
+  };
+
+  const handleEditStrategy = (strategy: Strategy) => {
+    setEditingStrategy(strategy);
+    setIsEditorOpen(true);
+  };
+  
+  const handleUseTemplate = (template: typeof strategyTemplates[0]) => {
+    setEditingStrategy({
+      ...template,
+      id: '', // Not a real strategy yet
+      user_id: '',
+      status: 'stopped',
+      symbols: template.symbols.split(',').map(s => s.trim()),
+      created_at: new Date().toISOString(),
+    });
+    setIsEditorOpen(true);
+  };
+
+  const handleSaveStrategy = async (strategyData: Omit<Strategy, 'id' | 'user_id' | 'created_at'>) => {
+    if (!user) {
+      toast.error("You must be logged in.");
+      return;
+    }
+
+    try {
+      if (editingStrategy && editingStrategy.id) {
+        // Update existing strategy
+        const { error } = await supabase
+          .from('strategies')
+          .update({ ...strategyData, symbols: strategyData.symbols })
+          .eq('id', editingStrategy.id);
+        if (error) throw error;
+        toast.success("Strategy updated successfully!");
+      } else {
+        // Create new strategy
+        const { error } = await supabase.from('strategies').insert([{ 
+          ...strategyData, 
+          user_id: user.id,
+          symbols: strategyData.symbols,
+        }]);
+        if (error) throw error;
+        toast.success("Strategy created successfully!");
+      }
+      fetchStrategies();
+      setIsEditorOpen(false);
+      setEditingStrategy(null);
+    } catch (error: any) {
+      toast.error(`Failed to save strategy: ${error.message}`);
+    }
+  };
 
   const toggleStrategy = async (id: string, currentStatus: string) => {
     const newStatus = currentStatus === "running" ? "stopped" : "running";
@@ -127,36 +189,6 @@ const Strategies = () => {
     }
   };
 
-  const handleCreateStrategy = async () => {
-    if (!user) {
-      toast.error("You must be logged in to create a strategy.");
-      return;
-    }
-    if (newStrategy.name && newStrategy.description) {
-      try {
-        const strategyData = {
-          user_id: user.id,
-          name: newStrategy.name,
-          description: newStrategy.description,
-          status: "stopped",
-          timeframe: newStrategy.timeframe,
-          symbols: newStrategy.symbols.split(",").map(s => s.trim()).filter(s => s),
-        };
-        const { error } = await supabase.from('strategies').insert([strategyData]);
-        if (error) throw error;
-
-        toast.success("Strategy created successfully!");
-        fetchStrategies();
-        setNewStrategy({ name: "", description: "", timeframe: "15m", symbols: "" });
-        setShowCreator(false);
-      } catch (error: any) {
-        toast.error("Failed to create strategy:", error.message);
-      }
-    } else {
-      toast.warning("Please fill in the strategy name and description.");
-    }
-  };
-
   const getStatusColor = (status: string) => {
     switch(status) {
       case "running": return "bg-green-500";
@@ -194,86 +226,42 @@ const Strategies = () => {
 
   return (
     <div className="container mx-auto py-8">
+      <StrategyEditor 
+        isOpen={isEditorOpen}
+        onClose={() => setIsEditorOpen(false)}
+        onSave={handleSaveStrategy}
+        strategy={editingStrategy}
+      />
       <div className="flex justify-between items-center mb-8">
         <h1 className="text-3xl font-bold">Trading Strategies</h1>
-        <Button onClick={() => setShowCreator(!showCreator)} className="flex items-center gap-2">
+        <Button onClick={handleNewStrategy} className="flex items-center gap-2">
           <Plus className="w-4 h-4" />
-          {showCreator ? "Cancel" : "New Strategy"}
+          New Strategy
         </Button>
       </div>
 
-      {showCreator && (
-        <Card className="mb-8">
-          <CardHeader>
-            <CardTitle>Create New Strategy</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="strategy-name">Strategy Name</Label>
-              <Input 
-                id="strategy-name" 
-                placeholder="e.g., Bullish Breakout" 
-                value={newStrategy.name}
-                onChange={(e) => setNewStrategy({...newStrategy, name: e.target.value})}
-              />
-            </div>
-            
-            <div className="space-y-2">
-              <Label htmlFor="strategy-description">Description (Plain English)</Label>
-              <Textarea 
-                id="strategy-description" 
-                placeholder="Describe your strategy in plain English. Example: Buy when price breaks above 20-day high with volume spike" 
-                rows={3}
-                value={newStrategy.description}
-                onChange={(e) => setNewStrategy({...newStrategy, description: e.target.value})}
-              />
-            </div>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Timeframe</Label>
-                <Select 
-                  value={newStrategy.timeframe}
-                  onValueChange={(value) => setNewStrategy({...newStrategy, timeframe: value})}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select timeframe" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="1m">1 Minute</SelectItem>
-                    <SelectItem value="5m">5 Minutes</SelectItem>
-                    <SelectItem value="15m">15 Minutes</SelectItem>
-                    <SelectItem value="1h">1 Hour</SelectItem>
-                    <SelectItem value="4h">4 Hours</SelectItem>
-                    <SelectItem value="1d">1 Day</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              
-              <div className="space-y-2">
-                <Label htmlFor="symbols">Symbols (comma separated)</Label>
-                <Input 
-                  id="symbols" 
-                  placeholder="e.g., AAPL, MSFT, GOOGL" 
-                  value={newStrategy.symbols}
-                  onChange={(e) => setNewStrategy({...newStrategy, symbols: e.target.value})}
-                />
-              </div>
-            </div>
-            
-            <div className="flex items-center justify-between pt-4">
-              <div className="flex items-center space-x-2">
-                <Switch id="preview-mode" />
-                <Label htmlFor="preview-mode">Enable Preview Mode</Label>
-              </div>
-              <Button onClick={handleCreateStrategy}>
-                Create Strategy
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      )}
+      {/* Strategy Templates */}
+      <div className="mb-12">
+        <h2 className="text-2xl font-bold mb-4">Start with a Template</h2>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {strategyTemplates.map((template, index) => (
+            <Card key={index} className="flex flex-col">
+              <CardHeader>
+                <CardTitle className="text-lg">{template.name}</CardTitle>
+                <CardDescription className="text-sm">{template.description}</CardDescription>
+              </CardHeader>
+              <CardContent className="flex-grow flex items-end">
+                <Button variant="outline" size="sm" onClick={() => handleUseTemplate(template)}>
+                  <Sparkles className="w-4 h-4 mr-2" />
+                  Use Template
+                </Button>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      </div>
 
+      <h2 className="text-2xl font-bold mb-4">Your Strategies</h2>
       {loading ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {[...Array(3)].map((_, i) => (
@@ -303,48 +291,44 @@ const Strategies = () => {
                     {getStatusText(strategy.status)}
                   </Badge>
                 </div>
-                <p className="text-sm text-muted-foreground">{strategy.description}</p>
+                <p className="text-sm text-muted-foreground h-10 overflow-hidden">{strategy.description}</p>
               </CardHeader>
               <CardContent>
-                <div className="flex flex-wrap gap-1 mb-4">
+                <div className="flex flex-wrap gap-1 mb-4 h-6 overflow-hidden">
                   {strategy.symbols.map((symbol, index) => (
                     <Badge key={index} variant="secondary">{symbol}</Badge>
                   ))}
                 </div>
                 
-                <div className="grid grid-cols-2 gap-2 mb-4 text-sm">
-                  <div>
-                    <span className="font-medium">Timeframe:</span> {strategy.timeframe}
-                  </div>
+                <div className="text-sm mb-4">
+                  <span className="font-medium">Timeframe:</span> {strategy.timeframe}
                 </div>
                 
-                <div className="flex justify-between items-center">
-                  <div className="flex gap-2">
-                    <Button 
-                      size="sm" 
-                      variant="outline" 
-                      onClick={() => toggleStrategy(strategy.id, strategy.status)}
-                    >
-                      {strategy.status === "running" ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
-                    </Button>
-                    <Button 
-                      size="sm" 
-                      variant="outline" 
-                      onClick={() => cloneStrategy(strategy)}
-                    >
-                      <Copy className="w-4 h-4" />
-                    </Button>
-                    <Button size="sm" variant="outline">
-                      <Edit className="w-4 h-4" />
-                    </Button>
-                    <Button 
-                      size="sm" 
-                      variant="outline" 
-                      onClick={() => deleteStrategy(strategy.id)}
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
-                  </div>
+                <div className="flex justify-end items-center gap-2">
+                  <Button 
+                    size="icon" 
+                    variant="outline" 
+                    onClick={() => toggleStrategy(strategy.id, strategy.status)}
+                  >
+                    {strategy.status === "running" ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+                  </Button>
+                  <Button 
+                    size="icon" 
+                    variant="outline" 
+                    onClick={() => cloneStrategy(strategy)}
+                  >
+                    <Copy className="w-4 h-4" />
+                  </Button>
+                  <Button size="icon" variant="outline" onClick={() => handleEditStrategy(strategy)}>
+                    <Edit className="w-4 h-4" />
+                  </Button>
+                  <Button 
+                    size="icon" 
+                    variant="destructive" 
+                    onClick={() => deleteStrategy(strategy.id)}
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </Button>
                 </div>
               </CardContent>
             </Card>
@@ -353,7 +337,7 @@ const Strategies = () => {
       ) : (
         <div className="text-center py-16 border-2 border-dashed rounded-lg">
           <h3 className="text-xl font-semibold">No Strategies Found</h3>
-          <p className="text-muted-foreground mt-2">Click "New Strategy" to create your first one.</p>
+          <p className="text-muted-foreground mt-2">Create a strategy or start with a template.</p>
         </div>
       )}
     </div>

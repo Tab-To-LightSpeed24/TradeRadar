@@ -1,5 +1,5 @@
 import { Toaster } from "@/components/ui/toaster";
-import { Toaster as Sonner } from "@/components/ui/sonner";
+import { Toaster as Sonner, toast } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
@@ -10,12 +10,43 @@ import Alerts from "./pages/Alerts";
 import Journal from "./pages/Journal";
 import Settings from "./pages/Settings";
 import NotFound from "./pages/NotFound";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Sidebar from "./components/Sidebar";
 import { ThemeProvider } from "next-themes";
-import { AuthProvider } from "./contexts/AuthContext"; // Import AuthProvider
+import { AuthProvider, useAuth } from "./contexts/AuthContext";
+import { supabase } from "./lib/supabase";
+import { Bell } from "lucide-react";
 
 const queryClient = new QueryClient();
+
+const RealtimeAlerts = () => {
+  const { user } = useAuth();
+
+  useEffect(() => {
+    if (!user) return;
+
+    const channel = supabase
+      .channel('public:alerts')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'alerts', filter: `user_id=eq.${user.id}` },
+        (payload) => {
+          const newAlert = payload.new as any;
+          toast(`${newAlert.strategy_name}: ${newAlert.symbol}`, {
+            description: `New ${newAlert.type} signal at $${newAlert.price}`,
+            icon: <Bell className="w-4 h-4" />,
+          });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user]);
+
+  return null; // This component doesn't render anything
+};
 
 const App = () => {
   const [activePage, setActivePage] = useState("dashboard");
@@ -27,7 +58,8 @@ const App = () => {
           <Toaster />
           <Sonner />
           <BrowserRouter>
-            <AuthProvider> {/* Wrap the entire application with AuthProvider */}
+            <AuthProvider>
+              <RealtimeAlerts />
               <div className="flex h-screen">
                 <Sidebar activePage={activePage} setActivePage={setActivePage} />
                 <main className="flex-1 md:ml-64 pt-16 md:pt-0 overflow-auto">
