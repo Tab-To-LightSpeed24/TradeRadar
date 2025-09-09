@@ -12,7 +12,6 @@ import {
   X,
   Sun,
   Moon,
-  MonitorDot,
   LogIn, // Import LogIn icon
   LogOut, // Import LogOut icon
   UserCircle // Import UserCircle icon
@@ -32,7 +31,6 @@ const Sidebar = ({ activePage, setActivePage }: {
 
   const navItems = [
     { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, path: "/dashboard" },
-    { id: "monitor", label: "Monitor", icon: MonitorDot, path: "/monitor" },
     { id: "strategies", label: "Strategies", icon: BarChart3, path: "/strategies" },
     { id: "alerts", label: "Alerts", icon: Bell, path: "/alerts" },
     { id: "journal", label: "Trade Journal", icon: BookOpen, path: "/journal" },
