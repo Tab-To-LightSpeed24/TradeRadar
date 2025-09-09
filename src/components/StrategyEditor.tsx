@@ -23,6 +23,7 @@ import {
 import { Strategy, StrategyCondition } from "@/pages/Strategies";
 import { toast } from "sonner";
 import { Separator } from "./ui/separator";
+import { PlusCircle, XCircle } from "lucide-react";
 
 interface StrategyEditorProps {
   isOpen: boolean;
@@ -31,7 +32,7 @@ interface StrategyEditorProps {
   strategy: Strategy | null;
 }
 
-const initialCondition: StrategyCondition = { indicator: 'RSI', operator: '>', value: '' };
+const initialCondition: StrategyCondition = { indicator: 'RSI', operator: '<', value: '30' };
 
 export const StrategyEditor = ({ isOpen, onClose, onSave, strategy }: StrategyEditorProps) => {
   const [name, setName] = useState("");
@@ -49,7 +50,7 @@ export const StrategyEditor = ({ isOpen, onClose, onSave, strategy }: StrategyEd
         setTimeframe(strategy.timeframe);
         setSymbols(Array.isArray(strategy.symbols) ? strategy.symbols.join(", ") : "");
         setStatus(strategy.status === 'running' ? 'running' : 'stopped');
-        setConditions(strategy.conditions && strategy.conditions.length > 0 ? strategy.conditions : [initialCondition]);
+        setConditions(strategy.conditions && strategy.conditions.length > 0 ? [...strategy.conditions] : [initialCondition]);
       } else {
         // Reset form for new strategy
         setName("");
@@ -83,16 +84,29 @@ export const StrategyEditor = ({ isOpen, onClose, onSave, strategy }: StrategyEd
     setConditions(newConditions);
   };
 
+  const addCondition = () => {
+    setConditions([...conditions, { indicator: 'Price', operator: '>', value: '' }]);
+  };
+
+  const removeCondition = (index: number) => {
+    if (conditions.length > 1) {
+      const newConditions = conditions.filter((_, i) => i !== index);
+      setConditions(newConditions);
+    } else {
+      toast.info("A strategy must have at least one condition.");
+    }
+  };
+
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>{strategy ? "Edit Strategy" : "Create New Strategy"}</DialogTitle>
           <DialogDescription>
-            Define your trading strategy using technical parameters.
+            Define your trading strategy using technical parameters. All conditions must be met to trigger an alert.
           </DialogDescription>
         </DialogHeader>
-        <div className="grid gap-4 py-4">
+        <div className="grid gap-4 py-4 max-h-[70vh] overflow-y-auto pr-4">
           <div className="space-y-2">
             <Label htmlFor="strategy-name">Strategy Name</Label>
             <Input 
@@ -141,33 +155,45 @@ export const StrategyEditor = ({ isOpen, onClose, onSave, strategy }: StrategyEd
           <div className="space-y-2">
             <Label>Conditions</Label>
             <div className="p-4 border rounded-md space-y-4">
-              {/* For now, only handling the first condition */}
-              <div className="grid grid-cols-3 gap-2">
-                <Select value={conditions[0].indicator} onValueChange={(val) => handleConditionChange(0, 'indicator', val)}>
-                  <SelectTrigger><SelectValue placeholder="Indicator" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Price">Price</SelectItem>
-                    <SelectItem value="RSI">RSI</SelectItem>
-                    <SelectItem value="SMA50">SMA (50)</SelectItem>
-                    <SelectItem value="SMA200">SMA (200)</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Select value={conditions[0].operator} onValueChange={(val) => handleConditionChange(0, 'operator', val)}>
-                  <SelectTrigger><SelectValue placeholder="Operator" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value=">">{'>'} (Greater than)</SelectItem>
-                    <SelectItem value="<">{'<'} (Less than)</SelectItem>
-                    <SelectItem value="crosses_above">Crosses Above</SelectItem>
-                    <SelectItem value="crosses_below">Crosses Below</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Input 
-                  placeholder="Value" 
-                  value={conditions[0].value}
-                  onChange={(e) => handleConditionChange(0, 'value', e.target.value)}
-                />
-              </div>
-              {/* In a future version, a button to add more conditions would go here */}
+              {conditions.map((condition, index) => (
+                <div key={index} className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <div className="grid grid-cols-3 gap-2 flex-grow">
+                      <Select value={condition.indicator} onValueChange={(val) => handleConditionChange(index, 'indicator', val)}>
+                        <SelectTrigger><SelectValue placeholder="Indicator" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Price">Price</SelectItem>
+                          <SelectItem value="RSI">RSI</SelectItem>
+                          <SelectItem value="SMA50">SMA (50)</SelectItem>
+                          <SelectItem value="SMA200">SMA (200)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <Select value={condition.operator} onValueChange={(val) => handleConditionChange(index, 'operator', val)}>
+                        <SelectTrigger><SelectValue placeholder="Operator" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value=">">{'>'} (Greater than)</SelectItem>
+                          <SelectItem value="<">{'<'} (Less than)</SelectItem>
+                          <SelectItem value="crosses_above">Crosses Above</SelectItem>
+                          <SelectItem value="crosses_below">Crosses Below</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <Input 
+                        placeholder="Value" 
+                        value={condition.value}
+                        onChange={(e) => handleConditionChange(index, 'value', e.target.value)}
+                      />
+                    </div>
+                    <Button variant="ghost" size="icon" onClick={() => removeCondition(index)}>
+                      <XCircle className="w-4 h-4 text-destructive" />
+                    </Button>
+                  </div>
+                  {index < conditions.length - 1 && <div className="text-center text-sm font-bold text-muted-foreground">AND</div>}
+                </div>
+              ))}
+              <Button variant="outline" size="sm" className="mt-2" onClick={addCondition}>
+                <PlusCircle className="w-4 h-4 mr-2" />
+                Add Condition
+              </Button>
             </div>
           </div>
         </div>

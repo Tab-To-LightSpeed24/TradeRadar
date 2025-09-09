@@ -308,8 +308,13 @@ const Strategies = () => {
                   <div className="mb-4">
                     <h4 className="text-sm font-semibold mb-1">Conditions</h4>
                     {strategy.conditions && strategy.conditions.length > 0 ? (
-                      <div className="text-sm p-2 bg-muted rounded-md">
-                        <code>{strategy.conditions[0].indicator} {strategy.conditions[0].operator} {strategy.conditions[0].value}</code>
+                      <div className="text-xs p-2 bg-muted rounded-md space-y-1">
+                        {strategy.conditions.map((cond, index) => (
+                          <div key={index}>
+                            <code>{cond.indicator} {cond.operator} {cond.value}</code>
+                            {index < strategy.conditions.length - 1 && <span className="font-bold"> AND</span>}
+                          </div>
+                        ))}
                       </div>
                     ) : (
                       <p className="text-sm text-muted-foreground">No conditions set.</p>
