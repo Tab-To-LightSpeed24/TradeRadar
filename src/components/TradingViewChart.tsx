@@ -4,6 +4,7 @@ import React, { useEffect, useRef } from 'react';
 import { createChart, ColorType } from 'lightweight-charts';
 import type { IChartApi, ISeriesApi, CandlestickData, UTCTimestamp } from 'lightweight-charts';
 import { cn } from '@/lib/utils';
+import { useTheme } from 'next-themes';
 
 interface TradingViewChartProps {
   data: (CandlestickData<UTCTimestamp>)[];
@@ -16,9 +17,16 @@ const TradingViewChart: React.FC<TradingViewChartProps> = ({ data, timeframe, sy
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candlestickSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
+  const { theme } = useTheme();
 
   useEffect(() => {
     if (!chartContainerRef.current) return;
+
+    // Resolve CSS variables to actual colors
+    const computedStyle = getComputedStyle(document.documentElement);
+    const textColor = `hsl(${computedStyle.getPropertyValue('--foreground').trim()})`;
+    const backgroundColor = `hsl(${computedStyle.getPropertyValue('--background').trim()})`;
+    const borderColor = `hsl(${computedStyle.getPropertyValue('--border').trim()})`;
 
     // Cleanup previous chart instance if it exists
     if (chartRef.current) {
@@ -28,19 +36,19 @@ const TradingViewChart: React.FC<TradingViewChartProps> = ({ data, timeframe, sy
 
     const chartOptions = {
       layout: {
-        textColor: 'hsl(var(--foreground))',
-        background: { type: ColorType.Solid, color: 'hsl(var(--background))' },
+        textColor,
+        background: { type: ColorType.Solid, color: backgroundColor },
       },
       grid: {
-        vertLines: { color: 'hsl(var(--border))' },
-        horzLines: { color: 'hsl(var(--border))' },
+        vertLines: { color: borderColor },
+        horzLines: { color: borderColor },
       },
       timeScale: {
         timeVisible: true,
         secondsVisible: false,
       },
       rightPriceScale: {
-        borderColor: 'hsl(var(--border))',
+        borderColor: borderColor,
       },
     };
 
@@ -74,7 +82,7 @@ const TradingViewChart: React.FC<TradingViewChartProps> = ({ data, timeframe, sy
         chartRef.current = null;
       }
     };
-  }, []);
+  }, [theme]); // Re-create the chart when the theme changes
 
   useEffect(() => {
     if (candlestickSeriesRef.current && data) {
