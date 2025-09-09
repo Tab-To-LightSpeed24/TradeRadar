@@ -17,14 +17,15 @@ TradeRadar is a **secure, alert-only trading companion**. It lets traders turn w
 
 ### 1. Homepage – Dashboard
 _A clean overview of your strategies, their running status, and quick actions._
-<img width="1919" height="914" alt="image" src="https://github.com/user-attachments/assets/a706b349-ba37-4e3f-960c-3832d07d5dd7" />
+<img width="1919" height="913" alt="image" src="https://github.com/user-attachments/assets/a4c602b7-14ab-4c0c-9363-eb86ea1732ab" />
 
 
 ---
 
 ### 2. Strategy Creator – Chatbot + GUI
 _Create or edit strategies using natural language, a structured form, or DSL. See parsed preview before saving._
-<img width="1919" height="913" alt="image" src="https://github.com/user-attachments/assets/a4c602b7-14ab-4c0c-9363-eb86ea1732ab" />
+<img width="1919" height="914" alt="image" src="https://github.com/user-attachments/assets/a706b349-ba37-4e3f-960c-3832d07d5dd7" />
+
 
 
 ---
@@ -130,4 +131,5 @@ _Per-strategy KPIs, win/loss ratios, expectancy curves, drawdowns, and sentiment
 TradeRadar is **alert-only**. It does not execute trades. All trading decisions remain the user’s responsibility. Use at your own risk.
 
 ---
+
 
