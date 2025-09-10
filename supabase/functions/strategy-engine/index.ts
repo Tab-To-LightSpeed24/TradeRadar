@@ -1,17 +1,13 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { corsHeaders } from "../_shared/cors.ts";
 
-// Define the types for our data
-interface Strategy {
-  id: string;
-  user_id: string;
-  name: string;
-  symbols: string[];
-}
+// Moved from the _shared file to fix the deployment issue
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+};
 
 // This is the main function that will be executed when the Edge Function is called
 Deno.serve(async (req) => {
-  console.log("--- Starting New Deployment: v3 ---"); // Added this line to force redeployment
   // This is needed to handle CORS preflight requests
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
