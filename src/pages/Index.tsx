@@ -1,6 +1,5 @@
 // Update this page (the content is just a fallback if you fail to update the page)
 
-import { MadeWithDyad } from "@/components/made-with-dyad";
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
 import { BarChart3, Bell, BookOpen, Play } from "lucide-react";
@@ -97,7 +96,6 @@ const Index = () => {
           </div>
         </div>
       </div>
-      <MadeWithDyad />
     </div>
   );
 };

@@ -11,7 +11,7 @@ interface Strategy {
 
 // This is the main function that will be executed when the Edge Function is called
 Deno.serve(async (req) => {
-  console.log("--- Starting New Deployment: v2 ---");
+  console.log("--- Starting New Deployment: v3 ---"); // Added this line to force redeployment
   // This is needed to handle CORS preflight requests
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
