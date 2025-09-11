@@ -185,9 +185,13 @@ serve(async (req) => {
         const aggregatesData = await aggregatesRes.json();
         console.log("  Polygon.io aggregates response:", aggregatesData);
 
-        if (aggregatesData.status !== 'OK' || !aggregatesData.results || aggregatesData.results.length === 0) {
-          console.error(`  Error or no data from Polygon.io for symbol ${symbol}: ${aggregatesData.error || aggregatesData.status}`);
+        // MODIFIED: Check for results presence, and log a warning if status is not 'OK'
+        if (!aggregatesData.results || aggregatesData.results.length === 0) {
+          console.error(`  No data from Polygon.io for symbol ${symbol}. Status: ${aggregatesData.status}. Error: ${aggregatesData.error || 'N/A'}`);
           continue; // Skip to the next symbol
+        }
+        if (aggregatesData.status !== 'OK') {
+          console.warn(`  Warning: Data for ${symbol} has status "${aggregatesData.status}". Data might be delayed or incomplete.`);
         }
 
         const closes = aggregatesData.results.map((agg: PolygonAggregate) => agg.c);
