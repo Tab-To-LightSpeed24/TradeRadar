@@ -13,48 +13,75 @@ interface StrategyCondition {
   value: string;
 }
 
-// Helper function to format symbols for Finnhub
-function formatSymbolForFinnhub(symbol: string): string {
-  // Example: "EURUSD" -> "OANDA:EUR_USD"
-  if (symbol.length === 6 && /^[A-Z]+$/.test(symbol)) {
-    const formatted = `OANDA:${symbol.slice(0, 3)}_${symbol.slice(3)}`;
-    console.log(`  Formatted Forex symbol from "${symbol}" to "${formatted}"`);
-    return formatted;
-  }
-  return symbol;
+interface PolygonAggregate {
+  c: number; // Close price
+  h: number; // High price
+  l: number; // Low price
+  o: number; // Open price
+  t: number; // Unix Msec timestamp
+  v: number; // Volume
 }
 
-// Helper function to map strategy timeframe to Finnhub resolution
-function mapTimeframeToFinnhubResolution(timeframe: string): string {
+// Helper function to map strategy timeframe to Polygon.io resolution
+function mapTimeframeToPolygonResolution(timeframe: string): { multiplier: number; timespan: string } {
   switch (timeframe) {
-    case "1m": return "1";
-    case "5m": return "5";
-    case "15m": return "15";
-    case "1h": return "60";
-    case "4h": return "D"; // Finnhub doesn't have 4h directly, using Daily as a fallback
-    case "1d": return "D";
-    default: return "D"; // Default to Daily
+    case "1m": return { multiplier: 1, timespan: "minute" };
+    case "5m": return { multiplier: 5, timespan: "minute" };
+    case "15m": return { multiplier: 15, timespan: "minute" };
+    case "1h": return { multiplier: 1, timespan: "hour" };
+    case "4h": return { multiplier: 4, timespan: "hour" };
+    case "1d": return { multiplier: 1, timespan: "day" };
+    default: return { multiplier: 1, timespan: "day" }; // Default to 1 day
   }
 }
 
-// Helper function to fetch indicator data from Finnhub
-async function fetchIndicatorData(
-  symbol: string,
-  resolution: string,
-  indicatorType: string,
-  period: number,
-  finnhubApiKey: string,
-): Promise<number | null> {
-  const finnhubIndicatorUrl = `https://finnhub.io/api/v1/indicator?symbol=${symbol}&resolution=${resolution}&indicator=${indicatorType}&timeperiod=${period}&token=${finnhubApiKey}`;
-  console.log(`  Fetching ${indicatorType} data for ${symbol} (${resolution}, period ${period})...`);
-  const res = await fetch(finnhubIndicatorUrl);
-  const data = await res.json();
-  console.log(`  Finnhub ${indicatorType} response:`, data);
-
-  if (data && data.v && data.v.length > 0) {
-    return data.v[data.v.length - 1]; // Get the latest value
+// Helper function to calculate Simple Moving Average (SMA)
+function calculateSMA(closes: number[], period: number): number | null {
+  if (closes.length < period) {
+    return null;
   }
-  return null;
+  const sum = closes.slice(-period).reduce((acc, val) => acc + val, 0);
+  return sum / period;
+}
+
+// Helper function to calculate Relative Strength Index (RSI)
+// This is a simplified RSI calculation for a single point,
+// a full historical RSI requires more complex state management.
+function calculateRSI(closes: number[], period: number): number | null {
+  if (closes.length < period + 1) { // Need at least period + 1 data points for initial average
+    return null;
+  }
+
+  let gains: number[] = [];
+  let losses: number[] = [];
+
+  for (let i = 1; i < closes.length; i++) {
+    const change = closes[i] - closes[i - 1];
+    if (change > 0) {
+      gains.push(change);
+      losses.push(0);
+    } else {
+      gains.push(0);
+      losses.push(Math.abs(change));
+    }
+  }
+
+  // Take the last 'period' values for calculation
+  const relevantGains = gains.slice(-period);
+  const relevantLosses = losses.slice(-period);
+
+  const avgGain = relevantGains.reduce((sum, val) => sum + val, 0) / period;
+  const avgLoss = relevantLosses.reduce((sum, val) => sum + val, 0) / period;
+
+  if (avgLoss === 0) {
+    return 100; // No losses, RSI is 100
+  }
+  if (avgGain === 0) {
+    return 0; // No gains, RSI is 0
+  }
+
+  const rs = avgGain / avgLoss;
+  return 100 - (100 / (1 + rs));
 }
 
 // Helper function to evaluate a single condition
@@ -74,7 +101,8 @@ function evaluateCondition(
   }
 
   // Determine the right side of the comparison
-  if (['RSI', 'SMA50', 'SMA200', 'Price'].includes(condition.value)) {
+  // Note: 'Upper Bollinger Band' is a placeholder, actual calculation would be needed
+  if (['RSI', 'SMA50', 'SMA200', 'Price', 'Upper Bollinger Band'].includes(condition.value)) {
     rightValue = indicatorValues[condition.value];
   } else {
     rightValue = parseFloat(condition.value);
@@ -91,8 +119,10 @@ function evaluateCondition(
     case ">": return leftValue > rightValue;
     case "<": return leftValue < rightValue;
     case "crosses_above": // Simplified: checks if current leftValue is above rightValue
+      // For a true crossover, we'd need previous data points. This is a current state check.
       return leftValue > rightValue;
     case "crosses_below": // Simplified: checks if current leftValue is below rightValue
+      // For a true crossover, we'd need previous data points. This is a current state check.
       return leftValue < rightValue;
     default: return false;
   }
@@ -104,7 +134,7 @@ serve(async (req) => {
   }
 
   try {
-    console.log("--- Strategy Engine Invoked ---");
+    console.log("--- Strategy Engine Invoked (Polygon.io) ---");
 
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
@@ -114,7 +144,7 @@ serve(async (req) => {
     console.log("Fetching running strategies...");
     const { data: strategies, error: strategiesError } = await supabase
       .from("strategies")
-      .select("id, user_id, name, symbols, timeframe, conditions") // Added timeframe
+      .select("id, user_id, name, symbols, timeframe, conditions")
       .eq("status", "running");
 
     if (strategiesError) throw strategiesError;
@@ -128,9 +158,9 @@ serve(async (req) => {
     }
 
     console.log(`Found ${strategies.length} running strategies.`);
-    const finnhubApiKey = Deno.env.get("FINNHUB_API_KEY");
-    if (!finnhubApiKey) throw new Error("FINNHUB_API_KEY is not set.");
-    console.log("Finnhub API key found.");
+    const polygonApiKey = Deno.env.get("POLYGON_API_KEY");
+    if (!polygonApiKey) throw new Error("POLYGON_API_KEY is not set.");
+    console.log("Polygon.io API key found.");
 
     for (const strategy of strategies) {
       console.log(`Processing strategy: "${strategy.name}" (ID: ${strategy.id})`);
@@ -139,27 +169,31 @@ serve(async (req) => {
         continue;
       }
 
-      const finnhubResolution = mapTimeframeToFinnhubResolution(strategy.timeframe);
+      const { multiplier, timespan } = mapTimeframeToPolygonResolution(strategy.timeframe);
+      const now = Date.now(); // Current timestamp in milliseconds
+      const lookbackPeriodMs = 200 * 24 * 60 * 60 * 1000; // Roughly 200 days for max SMA/RSI needs
+      const fromTimestamp = now - lookbackPeriodMs;
 
       for (const symbol of strategy.symbols) {
         console.log(`- Checking symbol: ${symbol}`);
         
-        const formattedSymbol = formatSymbolForFinnhub(symbol);
-        const finnhubQuoteUrl = `https://finnhub.io/api/v1/quote?symbol=${formattedSymbol}&token=${finnhubApiKey}`;
+        // Fetch historical aggregates for current price and indicator calculations
+        const polygonAggregatesUrl = `https://api.polygon.io/v2/aggs/ticker/${symbol}/range/${multiplier}/${timespan}/${fromTimestamp}/${now}?apiKey=${polygonApiKey}`;
         
-        console.log(`  Fetching current price from Finnhub...`);
-        const quoteRes = await fetch(finnhubQuoteUrl);
-        const quote = await quoteRes.json();
-        console.log("  Finnhub quote response:", quote);
+        console.log(`  Fetching historical data from Polygon.io for ${symbol}...`);
+        const aggregatesRes = await fetch(polygonAggregatesUrl);
+        const aggregatesData = await aggregatesRes.json();
+        console.log("  Polygon.io aggregates response:", aggregatesData);
 
-        if (quote.error) {
-          console.error(`  Error from Finnhub for symbol ${symbol}: ${quote.error}`);
-          console.log(`  This may be due to your Finnhub subscription plan not covering this data source (e.g., Forex).`);
+        if (aggregatesData.status !== 'OK' || !aggregatesData.results || aggregatesData.results.length === 0) {
+          console.error(`  Error or no data from Polygon.io for symbol ${symbol}: ${aggregatesData.error || aggregatesData.status}`);
           continue; // Skip to the next symbol
         }
 
-        const currentPrice = quote.c;
-        console.log(`  Current price for ${symbol} (${formattedSymbol}): ${currentPrice}`);
+        const closes = aggregatesData.results.map((agg: PolygonAggregate) => agg.c);
+        const currentPrice = closes[closes.length - 1]; // Latest close price
+
+        console.log(`  Current price for ${symbol}: ${currentPrice}`);
 
         if (typeof currentPrice !== 'number' || currentPrice <= 0) {
           console.log(`  Price for ${symbol} is not valid or 0. Skipping alert creation.`);
@@ -170,25 +204,24 @@ serve(async (req) => {
           'Price': currentPrice,
         };
 
-        // Fetch all necessary indicator data for the strategy's conditions
+        // Calculate all necessary indicator data for the strategy's conditions
         for (const condition of strategy.conditions) {
-          const indicatorsToFetch = [condition.indicator];
-          // If the value itself is an indicator (e.g., SMA50 crosses_above SMA200)
+          const indicatorsToCalculate = [condition.indicator];
           if (['RSI', 'SMA50', 'SMA200', 'Price'].includes(condition.value)) {
-            indicatorsToFetch.push(condition.value);
+            indicatorsToCalculate.push(condition.value);
           }
 
-          for (const ind of indicatorsToFetch) {
-            if (indicatorValues[ind] === undefined) { // Only fetch if not already fetched
-              let fetchedValue: number | null = null;
+          for (const ind of indicatorsToCalculate) {
+            if (indicatorValues[ind] === undefined) { // Only calculate if not already calculated
+              let calculatedValue: number | null = null;
               if (ind === 'RSI') {
-                fetchedValue = await fetchIndicatorData(formattedSymbol, finnhubResolution, 'rsi', 14, finnhubApiKey);
+                calculatedValue = calculateRSI(closes, 14); // 14-period RSI
               } else if (ind === 'SMA50') {
-                fetchedValue = await fetchIndicatorData(formattedSymbol, finnhubResolution, 'sma', 50, finnhubApiKey);
+                calculatedValue = calculateSMA(closes, 50); // 50-period SMA
               } else if (ind === 'SMA200') {
-                fetchedValue = await fetchIndicatorData(formattedSymbol, finnhubResolution, 'sma', 200, finnhubApiKey);
+                calculatedValue = calculateSMA(closes, 200); // 200-period SMA
               }
-              indicatorValues[ind] = fetchedValue;
+              indicatorValues[ind] = calculatedValue;
             }
           }
         }
