@@ -76,6 +76,8 @@ async function fetchAlphaVantageData(
         request_key: requestKey,
         response_data: data,
         expires_at: expiresAt,
+      }, {
+        onConflict: 'request_key'
       });
 
     if (upsertError) {
