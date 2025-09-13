@@ -186,7 +186,8 @@ serve(async (req) => {
           if (['RSI', 'SMA50', 'SMA200'].includes(cond.value)) requiredIndicators.add(cond.value);
         });
 
-        const apiCalls: Promise<any>[] = [fetchTwelveData('quote', { symbol }, twelveDataApiKey, supabase)];
+        // Use the correct /price endpoint for real-time price
+        const apiCalls: Promise<any>[] = [fetchTwelveData('price', { symbol }, twelveDataApiKey, supabase)];
         const indicatorMap = Array.from(requiredIndicators);
         
         indicatorMap.forEach(indicator => {
@@ -200,9 +201,9 @@ serve(async (req) => {
         });
 
         const results = await Promise.all(apiCalls);
-        const [quoteData, ...indicatorResults] = results;
+        const [priceData, ...indicatorResults] = results;
 
-        const currentPrice = quoteData ? parseFloat(quoteData.price) : null;
+        const currentPrice = priceData ? parseFloat(priceData.price) : null;
         if (currentPrice === null || isNaN(currentPrice)) {
           console.error(`  Could not get current price for ${symbol}. Skipping.`);
           continue;
