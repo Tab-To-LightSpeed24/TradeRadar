@@ -1,16 +1,82 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+const CACHE_DURATION_MINUTES = 15; // Cache data for 15 minutes
+
 interface StrategyCondition {
   indicator: string;
   operator: string;
   value: string;
 }
+
+// --- Caching Function ---
+async function getCachedOrFetch(
+  supabase: SupabaseClient,
+  apiKey: string,
+  params: Record<string, string>
+) {
+  const requestKey = `${params.function}:${params.symbol}:${params.interval || ''}`;
+  
+  // 1. Check cache first
+  const { data: cachedData, error: cacheError } = await supabase
+    .from('api_cache')
+    .select('response_data')
+    .eq('request_key', requestKey)
+    .gt('expires_at', new Date().toISOString())
+    .single();
+
+  if (cacheError && cacheError.code !== 'PGRST116') { // PGRST116 = no rows found
+    console.error(`  Error checking cache for ${requestKey}:`, cacheError.message);
+  }
+
+  if (cachedData) {
+    console.log(`  Cache HIT for ${requestKey}`);
+    return cachedData.response_data;
+  }
+  
+  console.log(`  Cache MISS for ${requestKey}. Fetching from API.`);
+
+  // 2. If not in cache, fetch from API
+  const query = new URLSearchParams({ ...params, apikey: apiKey }).toString();
+  const url = `https://www.alphavantage.co/query?${query}`;
+  
+  const res = await fetch(url);
+  if (!res.ok) {
+    console.error(`  Alpha Vantage request failed with status: ${res.status} ${res.statusText}`);
+    return null;
+  }
+  const apiData = await res.json();
+
+  // Don't cache rate-limit errors or other API info messages
+  if (apiData["Note"] || apiData["Information"] || apiData["Error Message"]) {
+    console.error("  Alpha Vantage API returned an info/error message. Will not cache. Response:", JSON.stringify(apiData));
+    return null;
+  }
+
+  // 3. Store successful response in cache
+  const expiresAt = new Date();
+  expiresAt.setMinutes(expiresAt.getMinutes() + CACHE_DURATION_MINUTES);
+
+  const { error: upsertError } = await supabase
+    .from('api_cache')
+    .upsert({
+      request_key: requestKey,
+      response_data: apiData,
+      expires_at: expiresAt.toISOString(),
+    }, { onConflict: 'request_key' });
+
+  if (upsertError) {
+    console.error(`  Failed to cache response for ${requestKey}:`, upsertError.message);
+  }
+
+  return apiData;
+}
+
 
 function mapTimeframeToAlphaVantage(timeframe: string): string {
   switch (timeframe) {
@@ -21,35 +87,6 @@ function mapTimeframeToAlphaVantage(timeframe: string): string {
     case "4h": return "daily";
     case "1d": return "daily";
     default: return "daily";
-  }
-}
-
-async function fetchAlphaVantageData(params: Record<string, string>, apiKey: string) {
-  const query = new URLSearchParams({ ...params, apikey: apiKey }).toString();
-  const url = `https://www.alphavantage.co/query?${query}`;
-  console.log(`  Fetching from Alpha Vantage: ${params.function} for ${params.symbol}`);
-  try {
-    const res = await fetch(url);
-    if (!res.ok) {
-      console.error(`  Alpha Vantage request failed with status: ${res.status} ${res.statusText}`);
-      return null;
-    }
-    const data = await res.json();
-    
-    if (data["Note"] || data["Error Message"] || !data) {
-      console.error("  Alpha Vantage API returned an error or note. Full response:", JSON.stringify(data));
-      return null;
-    }
-    
-    if (params.function === 'GLOBAL_QUOTE' && !data["Global Quote"]) {
-        console.error("  Alpha Vantage response for GLOBAL_QUOTE is missing 'Global Quote' data. Full response:", JSON.stringify(data));
-        return null;
-    }
-
-    return data;
-  } catch (error) {
-    console.error(`  Error fetching or parsing data from Alpha Vantage:`, error);
-    return null;
   }
 }
 
@@ -141,18 +178,21 @@ serve(async (req) => {
           if (['RSI', 'SMA50', 'SMA200'].includes(cond.value)) requiredIndicators.add(cond.value);
         });
 
-        const apiCalls: Promise<any>[] = [fetchAlphaVantageData({ function: 'GLOBAL_QUOTE', symbol }, alphaVantageApiKey)];
-        const indicatorMap = Array.from(requiredIndicators);
+        const apiCallPromises: Promise<any>[] = [];
         
-        indicatorMap.forEach(indicator => {
+        // Global Quote call
+        apiCallPromises.push(getCachedOrFetch(supabase, alphaVantageApiKey, { function: 'GLOBAL_QUOTE', symbol }));
+
+        // Indicator calls
+        requiredIndicators.forEach(indicator => {
           let params: Record<string, string> = {};
           if (indicator === 'RSI') params = { function: 'RSI', symbol, interval, time_period: '14', series_type: 'close' };
           else if (indicator === 'SMA50') params = { function: 'SMA', symbol, interval, time_period: '50', series_type: 'close' };
           else if (indicator === 'SMA200') params = { function: 'SMA', symbol, interval, time_period: '200', series_type: 'close' };
-          if (params.function) apiCalls.push(fetchAlphaVantageData(params, alphaVantageApiKey));
+          if (params.function) apiCallPromises.push(getCachedOrFetch(supabase, alphaVantageApiKey, params));
         });
 
-        const results = await Promise.all(apiCalls);
+        const results = await Promise.all(apiCallPromises);
         const [quoteData, ...indicatorResults] = results;
 
         const currentPrice = quoteData ? parseFloat(quoteData["Global Quote"]?.["05. price"]) : null;
@@ -162,7 +202,7 @@ serve(async (req) => {
         }
 
         const indicatorValues: Record<string, number | null> = { 'Price': currentPrice };
-        indicatorMap.forEach((indicator, index) => {
+        Array.from(requiredIndicators).forEach((indicator, index) => {
           const data = indicatorResults[index];
           let value = null;
           if (indicator === 'RSI') value = getLatestTimeSeriesValue(data, 'Technical Analysis: RSI');
