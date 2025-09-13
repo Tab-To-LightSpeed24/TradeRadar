@@ -18,7 +18,6 @@ function mapTimeframeToAlphaVantage(timeframe: string): string {
     case "5m": return "5min";
     case "15m": return "15min";
     case "1h": return "60min";
-    // Note: Alpha Vantage free tier doesn't support a 4h interval. Falling back to daily.
     case "4h": return "daily";
     case "1d": return "daily";
     default: return "daily";
@@ -31,14 +30,25 @@ async function fetchAlphaVantageData(params: Record<string, string>, apiKey: str
   console.log(`  Fetching from Alpha Vantage: ${params.function} for ${params.symbol}`);
   try {
     const res = await fetch(url);
-    const data = await res.json();
-    if (data["Note"] || data["Error Message"]) {
-      console.error("  Alpha Vantage API Error/Note:", data["Note"] || data["Error Message"]);
+    if (!res.ok) {
+      console.error(`  Alpha Vantage request failed with status: ${res.status} ${res.statusText}`);
       return null;
     }
+    const data = await res.json();
+    
+    if (data["Note"] || data["Error Message"] || !data) {
+      console.error("  Alpha Vantage API returned an error or note. Full response:", JSON.stringify(data));
+      return null;
+    }
+    
+    if (params.function === 'GLOBAL_QUOTE' && !data["Global Quote"]) {
+        console.error("  Alpha Vantage response for GLOBAL_QUOTE is missing 'Global Quote' data. Full response:", JSON.stringify(data));
+        return null;
+    }
+
     return data;
   } catch (error) {
-    console.error(`  Error fetching from Alpha Vantage:`, error);
+    console.error(`  Error fetching or parsing data from Alpha Vantage:`, error);
     return null;
   }
 }
