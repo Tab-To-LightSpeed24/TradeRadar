@@ -6,7 +6,8 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const CACHE_DURATION_MINUTES = 15;
+// Cache API responses for 5 minutes to stay within limits
+const CACHE_DURATION_MINUTES = 5;
 
 interface StrategyCondition {
   indicator: string;
@@ -14,24 +15,27 @@ interface StrategyCondition {
   value: string;
 }
 
-function mapTimeframeToAlphaVantage(timeframe: string): string {
+// Maps our app's timeframe format to Twelve Data's format
+function mapTimeframeToTwelveData(timeframe: string): string {
   switch (timeframe) {
     case "1m": return "1min";
     case "5m": return "5min";
     case "15m": return "15min";
-    case "1h": return "60min";
-    case "4h": return "daily";
-    case "1d": return "daily";
-    default: return "daily";
+    case "1h": return "1h";
+    case "4h": return "4h";
+    case "1d": return "1day";
+    default: return "1day";
   }
 }
 
-async function fetchAlphaVantageData(
+// Generic function to fetch data from Twelve Data API with caching
+async function fetchTwelveData(
+  endpoint: string,
   params: Record<string, string>,
   apiKey: string,
   supabase: SupabaseClient
 ) {
-  const requestKey = `${params.function}:${params.symbol}:${params.interval || ''}`;
+  const requestKey = `${endpoint}:${Object.values(params).join(':')}`;
   
   // 1. Check cache first
   const { data: cachedData, error: cacheError } = await supabase
@@ -51,20 +55,21 @@ async function fetchAlphaVantageData(
   }
 
   // 2. If not in cache, fetch from API
-  console.log(`  Fetching from Alpha Vantage: ${params.function} for ${params.symbol}`);
-  const query = new URLSearchParams({ ...params, apikey: apiKey }).toString();
-  const url = `https://www.alphavantage.co/query?${query}`;
+  console.log(`  Fetching from Twelve Data: ${endpoint} for ${params.symbol}`);
+  const query = new URLSearchParams({ ...params, apikey: apiKey, format: 'JSON' }).toString();
+  const url = `https://api.twelvedata.com/${endpoint}?${query}`;
   
   try {
     const res = await fetch(url);
     if (!res.ok) {
-      console.error(`  Alpha Vantage request failed with status: ${res.status} ${res.statusText}`);
+      const errorBody = await res.text();
+      console.error(`  Twelve Data request failed with status: ${res.status}. Body: ${errorBody}`);
       return null;
     }
     const data = await res.json();
     
-    if (data["Note"] || data["Error Message"] || !data) {
-      console.error("  Alpha Vantage API returned an error or note. Full response:", JSON.stringify(data));
+    if (data.code >= 400 || data.status === 'error') {
+      console.error("  Twelve Data API returned an error. Full response:", JSON.stringify(data));
       return null;
     }
     
@@ -86,21 +91,19 @@ async function fetchAlphaVantageData(
 
     return data;
   } catch (error) {
-    console.error(`  Error fetching or parsing data from Alpha Vantage:`, error);
+    console.error(`  Error fetching or parsing data from Twelve Data:`, error);
     return null;
   }
 }
 
-function getLatestTimeSeriesValue(data: any, key: string): number | null {
-  if (!data || !data[key]) return null;
-  const timeSeries = data[key];
-  const latestDateKey = Object.keys(timeSeries)[0];
-  if (!latestDateKey) return null;
-  const latestDataPoint = timeSeries[latestDateKey];
-  const valueKey = Object.keys(latestDataPoint)[0];
-  return parseFloat(latestDataPoint[valueKey]);
+// Extracts the latest value from an indicator's time series response
+function getLatestIndicatorValue(data: any, key: string): number | null {
+  if (!data || !data.values || data.values.length === 0) return null;
+  const latestDataPoint = data.values[0];
+  return parseFloat(latestDataPoint[key]);
 }
 
+// Evaluates a single strategy condition
 function evaluateCondition(
   currentPrice: number,
   indicatorValues: Record<string, number | null>,
@@ -130,6 +133,7 @@ function evaluateCondition(
   switch (condition.operator) {
     case ">": return leftValue > rightValue;
     case "<": return leftValue < rightValue;
+    // For Twelve Data, a simple comparison is sufficient for crosses, as we check every few minutes.
     case "crosses_above": return leftValue > rightValue;
     case "crosses_below": return leftValue < rightValue;
     default: return false;
@@ -142,7 +146,7 @@ serve(async (req) => {
   }
 
   try {
-    console.log("--- Strategy Engine Invoked (Alpha Vantage with Cache) ---");
+    console.log("--- Strategy Engine Invoked (Twelve Data with Cache) ---");
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
@@ -161,14 +165,17 @@ serve(async (req) => {
     }
 
     console.log(`Found ${strategies.length} running strategies.`);
-    const alphaVantageApiKey = Deno.env.get("ALPHA_VANTAGE_API_KEY");
-    if (!alphaVantageApiKey) throw new Error("ALPHA_VANTAGE_API_KEY is not set in Supabase secrets.");
+    const twelveDataApiKey = Deno.env.get("TWELVE_DATA_API_KEY");
+    if (!twelveDataApiKey) throw new Error("TWELVE_DATA_API_KEY is not set in Supabase secrets.");
 
     for (const strategy of strategies) {
       console.log(`Processing strategy: "${strategy.name}" (ID: ${strategy.id})`);
-      if (!strategy.conditions || strategy.conditions.length === 0) continue;
+      if (!strategy.conditions || strategy.conditions.length === 0 || !strategy.symbols || strategy.symbols.length === 0) {
+        console.log(`  Skipping strategy "${strategy.name}" due to no conditions or symbols.`);
+        continue;
+      }
 
-      const interval = mapTimeframeToAlphaVantage(strategy.timeframe);
+      const interval = mapTimeframeToTwelveData(strategy.timeframe);
 
       for (const symbol of strategy.symbols) {
         console.log(`- Checking symbol: ${symbol}`);
@@ -179,21 +186,23 @@ serve(async (req) => {
           if (['RSI', 'SMA50', 'SMA200'].includes(cond.value)) requiredIndicators.add(cond.value);
         });
 
-        const apiCalls: Promise<any>[] = [fetchAlphaVantageData({ function: 'GLOBAL_QUOTE', symbol }, alphaVantageApiKey, supabase)];
+        const apiCalls: Promise<any>[] = [fetchTwelveData('quote', { symbol }, twelveDataApiKey, supabase)];
         const indicatorMap = Array.from(requiredIndicators);
         
         indicatorMap.forEach(indicator => {
-          let params: Record<string, string> = {};
-          if (indicator === 'RSI') params = { function: 'RSI', symbol, interval, time_period: '14', series_type: 'close' };
-          else if (indicator === 'SMA50') params = { function: 'SMA', symbol, interval, time_period: '50', series_type: 'close' };
-          else if (indicator === 'SMA200') params = { function: 'SMA', symbol, interval, time_period: '200', series_type: 'close' };
-          if (params.function) apiCalls.push(fetchAlphaVantageData(params, alphaVantageApiKey, supabase));
+          let params: Record<string, string> = { symbol, interval, series_type: 'close' };
+          let endpoint = '';
+          if (indicator === 'RSI') { endpoint = 'rsi'; params.time_period = '14'; }
+          else if (indicator === 'SMA50') { endpoint = 'sma'; params.time_period = '50'; }
+          else if (indicator === 'SMA200') { endpoint = 'sma'; params.time_period = '200'; }
+          
+          if (endpoint) apiCalls.push(fetchTwelveData(endpoint, params, twelveDataApiKey, supabase));
         });
 
         const results = await Promise.all(apiCalls);
         const [quoteData, ...indicatorResults] = results;
 
-        const currentPrice = quoteData ? parseFloat(quoteData["Global Quote"]?.["05. price"]) : null;
+        const currentPrice = quoteData ? parseFloat(quoteData.price) : null;
         if (currentPrice === null || isNaN(currentPrice)) {
           console.error(`  Could not get current price for ${symbol}. Skipping.`);
           continue;
@@ -203,8 +212,8 @@ serve(async (req) => {
         indicatorMap.forEach((indicator, index) => {
           const data = indicatorResults[index];
           let value = null;
-          if (indicator === 'RSI') value = getLatestTimeSeriesValue(data, 'Technical Analysis: RSI');
-          else if (indicator === 'SMA50' || indicator === 'SMA200') value = getLatestTimeSeriesValue(data, 'Technical Analysis: SMA');
+          if (indicator === 'RSI') value = getLatestIndicatorValue(data, 'rsi');
+          else if (indicator === 'SMA50' || indicator === 'SMA200') value = getLatestIndicatorValue(data, 'sma');
           indicatorValues[indicator] = value;
         });
 
