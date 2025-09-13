@@ -186,17 +186,12 @@ serve(async (req) => {
           if (['RSI', 'SMA50', 'SMA200'].includes(cond.value)) requiredIndicators.add(cond.value);
         });
 
-        const baseParams = {
-          symbol,
-          timezone: 'exchange',
-          prepost: 'true',
-        };
-
+        // Use the correct /price endpoint for real-time price
         const apiCalls: Promise<any>[] = [fetchTwelveData('price', { symbol }, twelveDataApiKey, supabase)];
         const indicatorMap = Array.from(requiredIndicators);
         
         indicatorMap.forEach(indicator => {
-          let params: Record<string, string> = { ...baseParams, interval, series_type: 'close' };
+          let params: Record<string, string> = { symbol, interval, series_type: 'close' };
           let endpoint = '';
           if (indicator === 'RSI') { endpoint = 'rsi'; params.time_period = '14'; }
           else if (indicator === 'SMA50') { endpoint = 'sma'; params.time_period = '50'; }
