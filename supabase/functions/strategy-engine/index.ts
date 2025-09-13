@@ -22,10 +22,9 @@ interface PolygonAggregate {
   v: number; // Volume
 }
 
-// NEW: Function to get the latest trade price for a symbol
+// Function to get the latest trade price for a symbol
 async function getLatestPrice(symbol: string, apiKey: string): Promise<number | null> {
   try {
-    // Using the "Last Trade" endpoint for the most recent price
     const url = `https://api.polygon.io/v2/last/trade/${symbol}?apiKey=${apiKey}`;
     console.log(`  Fetching latest price for ${symbol} from: ${url}`);
     const res = await fetch(url);
@@ -33,7 +32,7 @@ async function getLatestPrice(symbol: string, apiKey: string): Promise<number | 
 
     if (data.status === 'OK' && data.results && data.results.p) {
       console.log(`  Latest price for ${symbol} is ${data.results.p}`);
-      return data.results.p; // 'p' is the price field
+      return data.results.p;
     } else {
       console.error(`  Could not fetch latest price for ${symbol}. Status: ${data.status}, Error: ${data.error || 'N/A'}`);
       return null;
@@ -44,7 +43,6 @@ async function getLatestPrice(symbol: string, apiKey: string): Promise<number | 
   }
 }
 
-
 // Helper function to map strategy timeframe to Polygon.io resolution
 function mapTimeframeToPolygonResolution(timeframe: string): { multiplier: number; timespan: string } {
   switch (timeframe) {
@@ -54,24 +52,20 @@ function mapTimeframeToPolygonResolution(timeframe: string): { multiplier: numbe
     case "1h": return { multiplier: 1, timespan: "hour" };
     case "4h": return { multiplier: 4, timespan: "hour" };
     case "1d": return { multiplier: 1, timespan: "day" };
-    default: return { multiplier: 1, timespan: "day" }; // Default to 1 day
+    default: return { multiplier: 1, timespan: "day" };
   }
 }
 
 // Helper function to calculate Simple Moving Average (SMA)
 function calculateSMA(closes: number[], period: number): number | null {
-  if (closes.length < period) {
-    return null;
-  }
+  if (closes.length < period) return null;
   const sum = closes.slice(-period).reduce((acc, val) => acc + val, 0);
   return sum / period;
 }
 
 // Helper function to calculate Relative Strength Index (RSI)
 function calculateRSI(closes: number[], period: number): number | null {
-  if (closes.length < period + 1) {
-    return null;
-  }
+  if (closes.length < period + 1) return null;
 
   let gains: number[] = [];
   let losses: number[] = [];
@@ -176,18 +170,12 @@ serve(async (req) => {
       }
 
       const { multiplier, timespan } = mapTimeframeToPolygonResolution(strategy.timeframe);
-      const to = new Date().toISOString().split('T')[0]; // Today's date
-      const from = new Date(Date.now() - 200 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]; // ~200 days ago
+      const to = new Date().toISOString().split('T')[0];
+      const from = new Date(Date.now() - 200 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
       for (const symbol of strategy.symbols) {
         console.log(`- Checking symbol: ${symbol}`);
         
-        const currentPrice = await getLatestPrice(symbol, polygonApiKey);
-        if (currentPrice === null) {
-          console.log(`  Could not get current price for ${symbol}. Skipping.`);
-          continue;
-        }
-
         const polygonAggregatesUrl = `https://api.polygon.io/v2/aggs/ticker/${symbol}/range/${multiplier}/${timespan}/${from}/${to}?adjusted=true&sort=asc&limit=5000&apiKey=${polygonApiKey}`;
         
         console.log(`  Fetching historical data from Polygon.io for ${symbol}...`);
@@ -201,9 +189,14 @@ serve(async (req) => {
 
         const closes = aggregatesData.results.map((agg: PolygonAggregate) => agg.c);
         
-        const indicatorValues: Record<string, number | null> = {
-          'Price': currentPrice,
-        };
+        let currentPrice = await getLatestPrice(symbol, polygonApiKey);
+
+        if (currentPrice === null) {
+          console.warn(`  WARNING: Failed to fetch real-time price. Falling back to last historical close price. DATA WILL BE STALE.`);
+          currentPrice = closes[closes.length - 1];
+        }
+
+        const indicatorValues: Record<string, number | null> = { 'Price': currentPrice };
 
         for (const condition of strategy.conditions) {
           const indicatorsToCalculate = [condition.indicator];
