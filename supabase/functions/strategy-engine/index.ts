@@ -22,6 +22,29 @@ interface PolygonAggregate {
   v: number; // Volume
 }
 
+// NEW: Function to get the latest trade price for a symbol
+async function getLatestPrice(symbol: string, apiKey: string): Promise<number | null> {
+  try {
+    // Using the "Last Trade" endpoint for the most recent price
+    const url = `https://api.polygon.io/v2/last/trade/${symbol}?apiKey=${apiKey}`;
+    console.log(`  Fetching latest price for ${symbol} from: ${url}`);
+    const res = await fetch(url);
+    const data = await res.json();
+
+    if (data.status === 'OK' && data.results && data.results.p) {
+      console.log(`  Latest price for ${symbol} is ${data.results.p}`);
+      return data.results.p; // 'p' is the price field
+    } else {
+      console.error(`  Could not fetch latest price for ${symbol}. Status: ${data.status}, Error: ${data.error || 'N/A'}`);
+      return null;
+    }
+  } catch (error) {
+    console.error(`  Error fetching latest price for ${symbol}:`, error);
+    return null;
+  }
+}
+
+
 // Helper function to map strategy timeframe to Polygon.io resolution
 function mapTimeframeToPolygonResolution(timeframe: string): { multiplier: number; timespan: string } {
   switch (timeframe) {
@@ -45,10 +68,8 @@ function calculateSMA(closes: number[], period: number): number | null {
 }
 
 // Helper function to calculate Relative Strength Index (RSI)
-// This is a simplified RSI calculation for a single point,
-// a full historical RSI requires more complex state management.
 function calculateRSI(closes: number[], period: number): number | null {
-  if (closes.length < period + 1) { // Need at least period + 1 data points for initial average
+  if (closes.length < period + 1) {
     return null;
   }
 
@@ -66,19 +87,14 @@ function calculateRSI(closes: number[], period: number): number | null {
     }
   }
 
-  // Take the last 'period' values for calculation
   const relevantGains = gains.slice(-period);
   const relevantLosses = losses.slice(-period);
 
   const avgGain = relevantGains.reduce((sum, val) => sum + val, 0) / period;
   const avgLoss = relevantLosses.reduce((sum, val) => sum + val, 0) / period;
 
-  if (avgLoss === 0) {
-    return 100; // No losses, RSI is 100
-  }
-  if (avgGain === 0) {
-    return 0; // No gains, RSI is 0
-  }
+  if (avgLoss === 0) return 100;
+  if (avgGain === 0) return 0;
 
   const rs = avgGain / avgLoss;
   return 100 - (100 / (1 + rs));
@@ -93,16 +109,13 @@ function evaluateCondition(
   let leftValue: number | null = null;
   let rightValue: number | null = null;
 
-  // Determine the left side of the comparison
   if (condition.indicator === 'Price') {
     leftValue = currentPrice;
   } else {
     leftValue = indicatorValues[condition.indicator];
   }
 
-  // Determine the right side of the comparison
-  // Note: 'Upper Bollinger Band' is a placeholder, actual calculation would be needed
-  if (['RSI', 'SMA50', 'SMA200', 'Price', 'Upper Bollinger Band'].includes(condition.value)) {
+  if (['RSI', 'SMA50', 'SMA200', 'Price'].includes(condition.value)) {
     rightValue = indicatorValues[condition.value];
   } else {
     rightValue = parseFloat(condition.value);
@@ -113,17 +126,13 @@ function evaluateCondition(
     return false;
   }
 
-  console.log(`  Evaluating condition: ${leftValue} ${condition.operator} ${rightValue}`);
+  console.log(`  Evaluating condition: ${leftValue.toFixed(2)} ${condition.operator} ${rightValue.toFixed(2)}`);
 
   switch (condition.operator) {
     case ">": return leftValue > rightValue;
     case "<": return leftValue < rightValue;
-    case "crosses_above": // Simplified: checks if current leftValue is above rightValue
-      // For a true crossover, we'd need previous data points. This is a current state check.
-      return leftValue > rightValue;
-    case "crosses_below": // Simplified: checks if current leftValue is below rightValue
-      // For a true crossover, we'd need previous data points. This is a current state check.
-      return leftValue < rightValue;
+    case "crosses_above": return leftValue > rightValue;
+    case "crosses_below": return leftValue < rightValue;
     default: return false;
   }
 }
@@ -141,7 +150,6 @@ serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
 
-    console.log("Fetching running strategies...");
     const { data: strategies, error: strategiesError } = await supabase
       .from("strategies")
       .select("id, user_id, name, symbols, timeframe, conditions")
@@ -150,7 +158,6 @@ serve(async (req) => {
     if (strategiesError) throw strategiesError;
 
     if (!strategies || strategies.length === 0) {
-      console.log("No active strategies found.");
       return new Response(JSON.stringify({ message: "No active strategies to process." }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
         status: 200,
@@ -160,7 +167,6 @@ serve(async (req) => {
     console.log(`Found ${strategies.length} running strategies.`);
     const polygonApiKey = Deno.env.get("POLYGON_API_KEY");
     if (!polygonApiKey) throw new Error("POLYGON_API_KEY is not set.");
-    console.log("Polygon.io API key found.");
 
     for (const strategy of strategies) {
       console.log(`Processing strategy: "${strategy.name}" (ID: ${strategy.id})`);
@@ -170,45 +176,35 @@ serve(async (req) => {
       }
 
       const { multiplier, timespan } = mapTimeframeToPolygonResolution(strategy.timeframe);
-      const now = Date.now(); // Current timestamp in milliseconds
-      const lookbackPeriodMs = 200 * 24 * 60 * 60 * 1000; // Roughly 200 days for max SMA/RSI needs
-      const fromTimestamp = now - lookbackPeriodMs;
+      const to = new Date().toISOString().split('T')[0]; // Today's date
+      const from = new Date(Date.now() - 200 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]; // ~200 days ago
 
       for (const symbol of strategy.symbols) {
         console.log(`- Checking symbol: ${symbol}`);
         
-        // Fetch historical aggregates for current price and indicator calculations
-        const polygonAggregatesUrl = `https://api.polygon.io/v2/aggs/ticker/${symbol}/range/${multiplier}/${timespan}/${fromTimestamp}/${now}?apiKey=${polygonApiKey}`;
+        const currentPrice = await getLatestPrice(symbol, polygonApiKey);
+        if (currentPrice === null) {
+          console.log(`  Could not get current price for ${symbol}. Skipping.`);
+          continue;
+        }
+
+        const polygonAggregatesUrl = `https://api.polygon.io/v2/aggs/ticker/${symbol}/range/${multiplier}/${timespan}/${from}/${to}?adjusted=true&sort=asc&limit=5000&apiKey=${polygonApiKey}`;
         
         console.log(`  Fetching historical data from Polygon.io for ${symbol}...`);
         const aggregatesRes = await fetch(polygonAggregatesUrl);
         const aggregatesData = await aggregatesRes.json();
-        console.log("  Polygon.io aggregates response:", aggregatesData);
 
-        // MODIFIED: Check for results presence, and log a warning if status is not 'OK'
         if (!aggregatesData.results || aggregatesData.results.length === 0) {
-          console.error(`  No data from Polygon.io for symbol ${symbol}. Status: ${aggregatesData.status}. Error: ${aggregatesData.error || 'N/A'}`);
-          continue; // Skip to the next symbol
-        }
-        if (aggregatesData.status !== 'OK') {
-          console.warn(`  Warning: Data for ${symbol} has status "${aggregatesData.status}". Data might be delayed or incomplete.`);
-        }
-
-        const closes = aggregatesData.results.map((agg: PolygonAggregate) => agg.c);
-        const currentPrice = closes[closes.length - 1]; // Latest close price
-
-        console.log(`  Current price for ${symbol}: ${currentPrice}`);
-
-        if (typeof currentPrice !== 'number' || currentPrice <= 0) {
-          console.log(`  Price for ${symbol} is not valid or 0. Skipping alert creation.`);
+          console.error(`  No historical data from Polygon.io for symbol ${symbol}. Status: ${aggregatesData.status}. Error: ${aggregatesData.error || 'N/A'}`);
           continue;
         }
 
+        const closes = aggregatesData.results.map((agg: PolygonAggregate) => agg.c);
+        
         const indicatorValues: Record<string, number | null> = {
           'Price': currentPrice,
         };
 
-        // Calculate all necessary indicator data for the strategy's conditions
         for (const condition of strategy.conditions) {
           const indicatorsToCalculate = [condition.indicator];
           if (['RSI', 'SMA50', 'SMA200', 'Price'].includes(condition.value)) {
@@ -216,29 +212,22 @@ serve(async (req) => {
           }
 
           for (const ind of indicatorsToCalculate) {
-            if (indicatorValues[ind] === undefined) { // Only calculate if not already calculated
+            if (indicatorValues[ind] === undefined) {
               let calculatedValue: number | null = null;
-              if (ind === 'RSI') {
-                calculatedValue = calculateRSI(closes, 14); // 14-period RSI
-              } else if (ind === 'SMA50') {
-                calculatedValue = calculateSMA(closes, 50); // 50-period SMA
-              } else if (ind === 'SMA200') {
-                calculatedValue = calculateSMA(closes, 200); // 200-period SMA
-              }
+              if (ind === 'RSI') calculatedValue = calculateRSI(closes, 14);
+              else if (ind === 'SMA50') calculatedValue = calculateSMA(closes, 50);
+              else if (ind === 'SMA200') calculatedValue = calculateSMA(closes, 200);
               indicatorValues[ind] = calculatedValue;
             }
           }
         }
 
-        // Evaluate all conditions
         let allConditionsMet = true;
         for (const condition of strategy.conditions) {
           if (!evaluateCondition(currentPrice, indicatorValues, condition)) {
             allConditionsMet = false;
-            console.log(`  Condition not met: ${condition.indicator} ${condition.operator} ${condition.value}`);
             break;
           }
-          console.log(`  Condition met: ${condition.indicator} ${condition.operator} ${condition.value}`);
         }
 
         if (allConditionsMet) {
