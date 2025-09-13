@@ -1,10 +1,12 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
+
+const CACHE_DURATION_MINUTES = 15;
 
 interface StrategyCondition {
   indicator: string;
@@ -24,10 +26,35 @@ function mapTimeframeToAlphaVantage(timeframe: string): string {
   }
 }
 
-async function fetchAlphaVantageData(params: Record<string, string>, apiKey: string) {
+async function fetchAlphaVantageData(
+  params: Record<string, string>,
+  apiKey: string,
+  supabase: SupabaseClient
+) {
+  const requestKey = `${params.function}:${params.symbol}:${params.interval || ''}`;
+  
+  // 1. Check cache first
+  const { data: cachedData, error: cacheError } = await supabase
+    .from('api_cache')
+    .select('response_data')
+    .eq('request_key', requestKey)
+    .gt('expires_at', new Date().toISOString())
+    .single();
+
+  if (cacheError && cacheError.code !== 'PGRST116') { // PGRST116 = no rows found
+    console.error(`  Cache read error for ${requestKey}:`, cacheError.message);
+  }
+
+  if (cachedData) {
+    console.log(`  Using cached data for ${requestKey}`);
+    return cachedData.response_data;
+  }
+
+  // 2. If not in cache, fetch from API
+  console.log(`  Fetching from Alpha Vantage: ${params.function} for ${params.symbol}`);
   const query = new URLSearchParams({ ...params, apikey: apiKey }).toString();
   const url = `https://www.alphavantage.co/query?${query}`;
-  console.log(`  Fetching from Alpha Vantage: ${params.function} for ${params.symbol}`);
+  
   try {
     const res = await fetch(url);
     if (!res.ok) {
@@ -41,9 +68,18 @@ async function fetchAlphaVantageData(params: Record<string, string>, apiKey: str
       return null;
     }
     
-    if (params.function === 'GLOBAL_QUOTE' && !data["Global Quote"]) {
-        console.error("  Alpha Vantage response for GLOBAL_QUOTE is missing 'Global Quote' data. Full response:", JSON.stringify(data));
-        return null;
+    // 3. Store successful response in cache
+    const expiresAt = new Date(Date.now() + CACHE_DURATION_MINUTES * 60 * 1000).toISOString();
+    const { error: upsertError } = await supabase
+      .from('api_cache')
+      .upsert({
+        request_key: requestKey,
+        response_data: data,
+        expires_at: expiresAt,
+      });
+
+    if (upsertError) {
+      console.error(`  Cache write error for ${requestKey}:`, upsertError.message);
     }
 
     return data;
@@ -104,7 +140,7 @@ serve(async (req) => {
   }
 
   try {
-    console.log("--- Strategy Engine Invoked (Alpha Vantage) ---");
+    console.log("--- Strategy Engine Invoked (Alpha Vantage with Cache) ---");
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
@@ -141,7 +177,7 @@ serve(async (req) => {
           if (['RSI', 'SMA50', 'SMA200'].includes(cond.value)) requiredIndicators.add(cond.value);
         });
 
-        const apiCalls: Promise<any>[] = [fetchAlphaVantageData({ function: 'GLOBAL_QUOTE', symbol }, alphaVantageApiKey)];
+        const apiCalls: Promise<any>[] = [fetchAlphaVantageData({ function: 'GLOBAL_QUOTE', symbol }, alphaVantageApiKey, supabase)];
         const indicatorMap = Array.from(requiredIndicators);
         
         indicatorMap.forEach(indicator => {
@@ -149,7 +185,7 @@ serve(async (req) => {
           if (indicator === 'RSI') params = { function: 'RSI', symbol, interval, time_period: '14', series_type: 'close' };
           else if (indicator === 'SMA50') params = { function: 'SMA', symbol, interval, time_period: '50', series_type: 'close' };
           else if (indicator === 'SMA200') params = { function: 'SMA', symbol, interval, time_period: '200', series_type: 'close' };
-          if (params.function) apiCalls.push(fetchAlphaVantageData(params, alphaVantageApiKey));
+          if (params.function) apiCalls.push(fetchAlphaVantageData(params, alphaVantageApiKey, supabase));
         });
 
         const results = await Promise.all(apiCalls);
