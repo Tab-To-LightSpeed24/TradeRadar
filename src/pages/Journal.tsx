@@ -29,6 +29,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
+  DialogFooter,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -52,24 +53,27 @@ interface Trade {
   created_at: string;
 }
 
+const initialFormState = {
+  symbol: "",
+  entry_time: "",
+  exit_time: "",
+  entry_price: "",
+  exit_price: "",
+  size: "",
+  pnl: "",
+  strategy: "",
+  notes: ""
+};
+
 const Journal = () => {
   const { user, loading: authLoading } = useAuth();
   const [trades, setTrades] = useState<Trade[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showTradeModal, setShowTradeModal] = useState(false);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingTrade, setEditingTrade] = useState<Trade | null>(null);
+  const [formData, setFormData] = useState(initialFormState);
   const [filter, setFilter] = useState("all");
   const [searchTerm, setSearchTerm] = useState("");
-  const [newTrade, setNewTrade] = useState({
-    symbol: "",
-    entry_time: "",
-    exit_time: "",
-    entry_price: "",
-    exit_price: "",
-    size: "",
-    pnl: "",
-    strategy: "",
-    notes: ""
-  });
 
   const fetchTrades = useCallback(async () => {
     if (!user) return;
@@ -96,40 +100,70 @@ const Journal = () => {
     }
   }, [authLoading, fetchTrades]);
 
-  const handleAddTrade = async () => {
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    const { id, value } = e.target;
+    setFormData(prev => ({ ...prev, [id]: value }));
+  };
+
+  const handleOpenModal = (trade: Trade | null) => {
+    setEditingTrade(trade);
+    if (trade) {
+      setFormData({
+        symbol: trade.symbol || "",
+        entry_time: trade.entry_time ? trade.entry_time.substring(0, 16) : "",
+        exit_time: trade.exit_time ? trade.exit_time.substring(0, 16) : "",
+        entry_price: trade.entry_price?.toString() || "",
+        exit_price: trade.exit_price?.toString() || "",
+        size: trade.size?.toString() || "",
+        pnl: trade.pnl?.toString() || "",
+        strategy: trade.strategy || "",
+        notes: trade.notes || "",
+      });
+    } else {
+      setFormData(initialFormState);
+    }
+    setIsModalOpen(true);
+  };
+
+  const handleSaveTrade = async () => {
     if (!user) {
-      toast.error("You must be logged in to add a trade.");
+      toast.error("You must be logged in.");
       return;
     }
-    if (newTrade.symbol && newTrade.entry_time) {
-      try {
-        const tradeData = {
-          user_id: user.id,
-          symbol: newTrade.symbol,
-          entry_time: newTrade.entry_time || null,
-          exit_time: newTrade.exit_time || null,
-          entry_price: newTrade.entry_price ? parseFloat(newTrade.entry_price) : null,
-          exit_price: newTrade.exit_price ? parseFloat(newTrade.exit_price) : null,
-          size: newTrade.size ? parseInt(newTrade.size) : null,
-          pnl: newTrade.pnl ? parseFloat(newTrade.pnl) : null,
-          strategy: newTrade.strategy || null,
-          notes: newTrade.notes || null,
-        };
+    if (!formData.symbol || !formData.entry_time) {
+      toast.warning("Please fill in at least the symbol and entry time.");
+      return;
+    }
+
+    const tradeData = {
+      user_id: user.id,
+      symbol: formData.symbol,
+      entry_time: formData.entry_time || null,
+      exit_time: formData.exit_time || null,
+      entry_price: formData.entry_price ? parseFloat(formData.entry_price) : null,
+      exit_price: formData.exit_price ? parseFloat(formData.exit_price) : null,
+      size: formData.size ? parseInt(formData.size) : null,
+      pnl: formData.pnl ? parseFloat(formData.pnl) : null,
+      strategy: formData.strategy || null,
+      notes: formData.notes || null,
+    };
+
+    try {
+      if (editingTrade) {
+        // Update existing trade
+        const { error } = await supabase.from('trades').update(tradeData).eq('id', editingTrade.id);
+        if (error) throw error;
+        toast.success("Trade updated successfully!");
+      } else {
+        // Create new trade
         const { error } = await supabase.from('trades').insert([tradeData]);
         if (error) throw error;
-
         toast.success("Trade logged successfully!");
-        fetchTrades();
-        setNewTrade({
-          symbol: "", entry_time: "", exit_time: "", entry_price: "",
-          exit_price: "", size: "", pnl: "", strategy: "", notes: ""
-        });
-        setShowTradeModal(false);
-      } catch (error: any) {
-        toast.error("Failed to log trade:", error.message);
       }
-    } else {
-      toast.warning("Please fill in at least the symbol and entry time.");
+      fetchTrades();
+      setIsModalOpen(false);
+    } catch (error: any) {
+      toast.error(`Failed to save trade: ${error.message}`);
     }
   };
 
@@ -220,58 +254,59 @@ const Journal = () => {
       <div className="flex justify-between items-center mb-8">
         <h1 className="text-3xl font-bold">Trade Journal</h1>
         <div className="flex gap-2">
-          <Dialog open={showTradeModal} onOpenChange={setShowTradeModal}>
+          <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
             <DialogTrigger asChild>
-              <Button className="flex items-center gap-2">
+              <Button onClick={() => handleOpenModal(null)} className="flex items-center gap-2">
                 <Plus className="w-4 h-4" />
                 Add Trade
               </Button>
             </DialogTrigger>
             <DialogContent>
               <DialogHeader>
-                <DialogTitle>Log New Trade</DialogTitle>
+                <DialogTitle>{editingTrade ? "Edit Trade" : "Log New Trade"}</DialogTitle>
               </DialogHeader>
               <div className="grid gap-4 py-4">
                 <div className="grid grid-cols-4 items-center gap-4">
                   <Label htmlFor="symbol" className="text-right">Symbol</Label>
-                  <Input id="symbol" value={newTrade.symbol} onChange={(e) => setNewTrade({...newTrade, symbol: e.target.value})} className="col-span-3" />
+                  <Input id="symbol" value={formData.symbol} onChange={handleInputChange} className="col-span-3" />
                 </div>
                 <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="entry-time" className="text-right">Entry Time</Label>
-                  <Input id="entry-time" type="datetime-local" value={newTrade.entry_time} onChange={(e) => setNewTrade({...newTrade, entry_time: e.target.value})} className="col-span-3" />
+                  <Label htmlFor="entry_time" className="text-right">Entry Time</Label>
+                  <Input id="entry_time" type="datetime-local" value={formData.entry_time} onChange={handleInputChange} className="col-span-3" />
                 </div>
                 <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="exit-time" className="text-right">Exit Time</Label>
-                  <Input id="exit-time" type="datetime-local" value={newTrade.exit_time} onChange={(e) => setNewTrade({...newTrade, exit_time: e.target.value})} className="col-span-3" />
+                  <Label htmlFor="exit_time" className="text-right">Exit Time</Label>
+                  <Input id="exit_time" type="datetime-local" value={formData.exit_time} onChange={handleInputChange} className="col-span-3" />
                 </div>
                 <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="entry-price" className="text-right">Entry Price</Label>
-                  <Input id="entry-price" type="number" value={newTrade.entry_price} onChange={(e) => setNewTrade({...newTrade, entry_price: e.target.value})} className="col-span-3" />
+                  <Label htmlFor="entry_price" className="text-right">Entry Price</Label>
+                  <Input id="entry_price" type="number" value={formData.entry_price} onChange={handleInputChange} className="col-span-3" />
                 </div>
                 <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="exit-price" className="text-right">Exit Price</Label>
-                  <Input id="exit-price" type="number" value={newTrade.exit_price} onChange={(e) => setNewTrade({...newTrade, exit_price: e.target.value})} className="col-span-3" />
+                  <Label htmlFor="exit_price" className="text-right">Exit Price</Label>
+                  <Input id="exit_price" type="number" value={formData.exit_price} onChange={handleInputChange} className="col-span-3" />
                 </div>
                 <div className="grid grid-cols-4 items-center gap-4">
                   <Label htmlFor="size" className="text-right">Size</Label>
-                  <Input id="size" type="number" value={newTrade.size} onChange={(e) => setNewTrade({...newTrade, size: e.target.value})} className="col-span-3" />
+                  <Input id="size" type="number" value={formData.size} onChange={handleInputChange} className="col-span-3" />
                 </div>
                 <div className="grid grid-cols-4 items-center gap-4">
                   <Label htmlFor="pnl" className="text-right">P&L</Label>
-                  <Input id="pnl" type="number" value={newTrade.pnl} onChange={(e) => setNewTrade({...newTrade, pnl: e.target.value})} className="col-span-3" />
+                  <Input id="pnl" type="number" value={formData.pnl} onChange={handleInputChange} className="col-span-3" />
                 </div>
                 <div className="grid grid-cols-4 items-center gap-4">
                   <Label htmlFor="strategy" className="text-right">Strategy</Label>
-                  <Input id="strategy" value={newTrade.strategy} onChange={(e) => setNewTrade({...newTrade, strategy: e.target.value})} className="col-span-3" />
+                  <Input id="strategy" value={formData.strategy} onChange={handleInputChange} className="col-span-3" />
                 </div>
                 <div className="grid grid-cols-4 items-center gap-4">
                   <Label htmlFor="notes" className="text-right">Notes</Label>
-                  <Textarea id="notes" value={newTrade.notes} onChange={(e) => setNewTrade({...newTrade, notes: e.target.value})} className="col-span-3" />
+                  <Textarea id="notes" value={formData.notes} onChange={handleInputChange} className="col-span-3" />
                 </div>
               </div>
-              <div className="flex justify-end">
-                <Button onClick={handleAddTrade}>Save Trade</Button>
-              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setIsModalOpen(false)}>Cancel</Button>
+                <Button onClick={handleSaveTrade}>Save Trade</Button>
+              </DialogFooter>
             </DialogContent>
           </Dialog>
           <Button variant="outline" className="flex items-center gap-2"><Download className="w-4 h-4" />Export</Button>
@@ -334,7 +369,7 @@ const Journal = () => {
                 <div key={trade.id} className="p-4 flex items-center justify-between">
                   <div>
                     <div className="font-medium flex items-center gap-2">{trade.symbol}<Badge variant="secondary">{trade.strategy}</Badge></div>
-                    <div className="text-sm text-muted-foreground">{trade.entry_time} → {trade.exit_time}</div>
+                    <div className="text-sm text-muted-foreground">{trade.entry_time ? new Date(trade.entry_time).toLocaleString() : ''} → {trade.exit_time ? new Date(trade.exit_time).toLocaleString() : ''}</div>
                   </div>
                   <div className="flex items-center gap-6">
                     <div className="text-right">
@@ -342,7 +377,7 @@ const Journal = () => {
                       <div className={`font-medium ${(trade.pnl || 0) >= 0 ? "text-green-500" : "text-red-500"}`}>${(trade.pnl || 0).toFixed(2)}</div>
                     </div>
                     <div className="flex items-center gap-2">
-                      <Button variant="ghost" size="sm"><Edit className="w-4 h-4" /></Button>
+                      <Button variant="ghost" size="sm" onClick={() => handleOpenModal(trade)}><Edit className="w-4 h-4" /></Button>
                       <Button variant="ghost" size="sm" onClick={() => deleteTrade(trade.id)}><Trash2 className="w-4 h-4" /></Button>
                     </div>
                   </div>
