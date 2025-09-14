@@ -6,6 +6,7 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+// Cache API responses for 5 minutes to stay within limits
 const CACHE_DURATION_MINUTES = 5;
 
 interface StrategyCondition {
@@ -14,40 +15,7 @@ interface StrategyCondition {
   value: string;
 }
 
-async function sendTelegramAlert(
-  settings: any,
-  message: string
-) {
-  if (
-    !settings.telegram_alerts_enabled ||
-    !settings.telegram_bot_token ||
-    !settings.telegram_chat_id
-  ) {
-    return;
-  }
-
-  const url = `https://api.telegram.org/bot${settings.telegram_bot_token}/sendMessage`;
-  try {
-    const response = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        chat_id: settings.telegram_chat_id,
-        text: message,
-        parse_mode: "Markdown",
-      }),
-    });
-    if (!response.ok) {
-      const errorBody = await response.json();
-      console.error("  Failed to send Telegram alert:", errorBody);
-    } else {
-      console.log("  Successfully sent Telegram alert.");
-    }
-  } catch (error) {
-    console.error("  Error sending Telegram alert:", error);
-  }
-}
-
+// Maps our app's timeframe format to Twelve Data's format
 function mapTimeframeToTwelveData(timeframe: string): string {
   switch (timeframe) {
     case "1m": return "1min";
@@ -60,6 +28,7 @@ function mapTimeframeToTwelveData(timeframe: string): string {
   }
 }
 
+// Generic function to fetch data from Twelve Data API with caching
 async function fetchTwelveData(
   endpoint: string,
   params: Record<string, string>,
@@ -68,6 +37,7 @@ async function fetchTwelveData(
 ) {
   const requestKey = `${endpoint}:${Object.values(params).join(':')}`;
   
+  // 1. Check cache first
   const { data: cachedData, error: cacheError } = await supabase
     .from('api_cache')
     .select('response_data')
@@ -75,7 +45,7 @@ async function fetchTwelveData(
     .gt('expires_at', new Date().toISOString())
     .single();
 
-  if (cacheError && cacheError.code !== 'PGRST116') {
+  if (cacheError && cacheError.code !== 'PGRST116') { // PGRST116 = no rows found
     console.error(`  Cache read error for ${requestKey}:`, cacheError.message);
   }
 
@@ -84,6 +54,7 @@ async function fetchTwelveData(
     return cachedData.response_data;
   }
 
+  // 2. If not in cache, fetch from API
   console.log(`  Fetching from Twelve Data: ${endpoint} for ${params.symbol}`);
   const query = new URLSearchParams({ ...params, apikey: apiKey, format: 'JSON' }).toString();
   const url = `https://api.twelvedata.com/${endpoint}?${query}`;
@@ -102,6 +73,7 @@ async function fetchTwelveData(
       return null;
     }
     
+    // 3. Store successful response in cache
     const expiresAt = new Date(Date.now() + CACHE_DURATION_MINUTES * 60 * 1000).toISOString();
     const { error: upsertError } = await supabase
       .from('api_cache')
@@ -109,7 +81,9 @@ async function fetchTwelveData(
         request_key: requestKey,
         response_data: data,
         expires_at: expiresAt,
-      }, { onConflict: 'request_key' });
+      }, {
+        onConflict: 'request_key'
+      });
 
     if (upsertError) {
       console.error(`  Cache write error for ${requestKey}:`, upsertError.message);
@@ -122,24 +96,32 @@ async function fetchTwelveData(
   }
 }
 
+// Extracts the latest value from an indicator's time series response
 function getLatestIndicatorValue(data: any, key: string): number | null {
   if (!data || !data.values || data.values.length === 0) return null;
   const latestDataPoint = data.values[0];
   return parseFloat(latestDataPoint[key]);
 }
 
+// Evaluates a single strategy condition
 function evaluateCondition(
   currentPrice: number,
   indicatorValues: Record<string, number | null>,
   condition: StrategyCondition,
 ): boolean {
   let leftValue: number | null = null;
-  if (condition.indicator === 'Price') leftValue = currentPrice;
-  else leftValue = indicatorValues[condition.indicator];
+  if (condition.indicator === 'Price') {
+    leftValue = currentPrice;
+  } else {
+    leftValue = indicatorValues[condition.indicator];
+  }
 
   let rightValue: number | null = null;
-  if (['RSI', 'SMA50', 'SMA200'].includes(condition.value)) rightValue = indicatorValues[condition.value];
-  else rightValue = parseFloat(condition.value);
+  if (['RSI', 'SMA50', 'SMA200'].includes(condition.value)) {
+    rightValue = indicatorValues[condition.value];
+  } else {
+    rightValue = parseFloat(condition.value);
+  }
 
   if (leftValue === null || rightValue === null || isNaN(leftValue) || isNaN(rightValue)) {
     console.warn(`  Cannot evaluate condition: ${condition.indicator} ${condition.operator} ${condition.value}. Missing or invalid values.`);
@@ -151,6 +133,7 @@ function evaluateCondition(
   switch (condition.operator) {
     case ">": return leftValue > rightValue;
     case "<": return leftValue < rightValue;
+    // For Twelve Data, a simple comparison is sufficient for crosses, as we check every few minutes.
     case "crosses_above": return leftValue > rightValue;
     case "crosses_below": return leftValue < rightValue;
     default: return false;
@@ -163,7 +146,7 @@ serve(async (req) => {
   }
 
   try {
-    console.log("--- Strategy Engine Invoked (Telegram Enabled) ---");
+    console.log("--- Strategy Engine Invoked (Twelve Data with Cache) ---");
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
@@ -203,7 +186,12 @@ serve(async (req) => {
           if (['RSI', 'SMA50', 'SMA200'].includes(cond.value)) requiredIndicators.add(cond.value);
         });
 
-        const baseParams = { symbol, timezone: 'exchange', prepost: 'true' };
+        const baseParams = {
+          symbol,
+          timezone: 'exchange',
+          prepost: 'true',
+        };
+
         const apiCalls: Promise<any>[] = [fetchTwelveData('price', { symbol }, twelveDataApiKey, supabase)];
         const indicatorMap = Array.from(requiredIndicators);
         
@@ -245,21 +233,12 @@ serve(async (req) => {
 
         if (allConditionsMet) {
           console.log(`  All conditions met for ${symbol}. Creating alert...`);
-          
-          // Insert in-app alert
-          const { error: alertError } = await supabase.from("alerts").insert({
+          const { error } = await supabase.from("alerts").insert({
             user_id: strategy.user_id, strategy_id: strategy.id, strategy_name: strategy.name,
             symbol, price: currentPrice, type: "Signal Triggered", is_read: false,
           });
-          if (alertError) console.error(`  Failed to insert alert for ${symbol}:`, alertError);
-          else console.log(`  Successfully inserted in-app alert for ${symbol}.`);
-
-          // Send Telegram alert
-          const { data: settings } = await supabase.from('user_settings').select('*').eq('user_id', strategy.user_id).single();
-          if (settings) {
-            const message = `*TradeRadar Alert* 🚨\n\n*Strategy:* ${strategy.name}\n*Symbol:* ${symbol}\n*Price:* $${currentPrice.toFixed(2)}\n\nConditions met.`;
-            await sendTelegramAlert(settings, message);
-          }
+          if (error) console.error(`  Failed to insert alert for ${symbol}:`, error);
+          else console.log(`  Successfully inserted alert for ${symbol}.`);
         } else {
           console.log(`  Not all conditions met for ${symbol}.`);
         }
