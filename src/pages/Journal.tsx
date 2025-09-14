@@ -37,6 +37,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import { Skeleton } from "@/components/ui/skeleton";
+import Papa from "papaparse";
 
 interface Trade {
   id: string;
@@ -150,12 +151,10 @@ const Journal = () => {
 
     try {
       if (editingTrade) {
-        // Update existing trade
         const { error } = await supabase.from('trades').update(tradeData).eq('id', editingTrade.id);
         if (error) throw error;
         toast.success("Trade updated successfully!");
       } else {
-        // Create new trade
         const { error } = await supabase.from('trades').insert([tradeData]);
         if (error) throw error;
         toast.success("Trade logged successfully!");
@@ -231,6 +230,38 @@ const Journal = () => {
       bestSymbol: { name: bestSymbolName, pnl: symbolPnl[bestSymbolName] || 0 },
     };
   }, [trades]);
+
+  const handleExport = () => {
+    if (filteredTrades.length === 0) {
+      toast.info("No trades to export.");
+      return;
+    }
+
+    const dataToExport = filteredTrades.map(trade => ({
+      Symbol: trade.symbol,
+      'Entry Time': trade.entry_time ? new Date(trade.entry_time).toLocaleString() : '',
+      'Exit Time': trade.exit_time ? new Date(trade.exit_time).toLocaleString() : '',
+      'Entry Price': trade.entry_price,
+      'Exit Price': trade.exit_price,
+      Size: trade.size,
+      'P&L': trade.pnl,
+      Strategy: trade.strategy,
+      Notes: trade.notes,
+    }));
+
+    const csv = Papa.unparse(dataToExport);
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `traderadar_trades_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    toast.success("Trades exported successfully!");
+  };
 
   if (authLoading) {
     return (
@@ -309,7 +340,7 @@ const Journal = () => {
               </DialogFooter>
             </DialogContent>
           </Dialog>
-          <Button variant="outline" className="flex items-center gap-2"><Download className="w-4 h-4" />Export</Button>
+          <Button variant="outline" className="flex items-center gap-2" onClick={handleExport}><Download className="w-4 h-4" />Export</Button>
           <Button variant="outline" className="flex items-center gap-2"><Upload className="w-4 h-4" />Import</Button>
         </div>
       </div>
