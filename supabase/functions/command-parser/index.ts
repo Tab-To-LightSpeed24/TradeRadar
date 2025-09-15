@@ -23,7 +23,7 @@ function getIntent(message: string): Intent {
   if (/\b(create|build|make)\b.*\b(strategy)\b/i.test(msg)) return "CREATE_STRATEGY";
   if (/\b(list|show|see)\b.*\b(strategies)\b/i.test(msg)) return "LIST_STRATEGIES";
   if (/\b(what is|what's|define|explain)\b/i.test(msg)) return "QUESTION_TRADING_CONCEPT";
-  if (/\b(help|what can you do)\b/i.test(msg)) return "HELP";
+  if (/\b(help|what can you do|features)\b/i.test(msg)) return "HELP";
   if (/\b(hello|hi|hey|howdy)\b/i.test(msg)) return "GREETING";
   return "FALLBACK";
 }
