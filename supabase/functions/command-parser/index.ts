@@ -19,9 +19,10 @@ type Intent = "GREETING" | "CREATE_STRATEGY" | "QUESTION_TRADING_CONCEPT" | "FAL
 
 function getIntent(message: string): Intent {
   const msg = message.toLowerCase();
-  if (/\b(hello|hi|hey|howdy)\b/i.test(msg)) return "GREETING";
+  // Prioritize specific actions over general greetings
   if (/\b(create|build|make)\b.*\b(strategy)\b/i.test(msg)) return "CREATE_STRATEGY";
   if (/\b(what is|what's|define|explain)\b/i.test(msg)) return "QUESTION_TRADING_CONCEPT";
+  if (/\b(hello|hi|hey|howdy)\b/i.test(msg)) return "GREETING";
   return "FALLBACK";
 }
 
