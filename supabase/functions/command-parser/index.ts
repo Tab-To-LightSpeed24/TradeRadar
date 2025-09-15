@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { fetchTwelveData } from "../_shared/twelve-data.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -20,6 +21,7 @@ type Intent =
   | "CREATE_STRATEGY" 
   | "LIST_STRATEGIES" 
   | "DELETE_STRATEGY"
+  | "GET_MARKET_DATA"
   | "QUESTION_TRADING_CONCEPT" 
   | "HOW_TO_EXPORT"
   | "TROUBLESHOOT_ALERTS"
@@ -30,20 +32,14 @@ type Intent =
 function getIntent(message: string): Intent {
   const msg = message.toLowerCase();
   
-  // --- Action-oriented intents (highest priority) ---
+  if (/\b(price of|rsi for|sma for|data for|get me|what's the)\b/i.test(msg) && /\b([A-Z]{1,5})\b/.test(message)) return "GET_MARKET_DATA";
   if (/\b(delete|remove|get rid of)\b.*\b(strategy)\b/i.test(msg)) return "DELETE_STRATEGY";
   if (/\b(create|build|make|set up)\b.*\b(strategy)\b/i.test(msg)) return "CREATE_STRATEGY";
   if (/\b(list|show|see|what are my|get my)\b.*\b(strategies|strats)\b/i.test(msg)) return "LIST_STRATEGIES";
-  
-  // --- "How-to" and Troubleshooting intents ---
   if (/\b(export|download|csv)\b.*\b(journal|trades|history)\b/i.test(msg)) return "HOW_TO_EXPORT";
   if (/\b(alerts? aren't working|troubleshoot|not getting alerts|alerts? broken|debug)\b/i.test(msg)) return "TROUBLESHOOT_ALERTS";
-
-  // --- Informational intents ---
   if (/\b(what is|what's|define|explain|tell me about)\b/i.test(msg)) return "QUESTION_TRADING_CONCEPT";
   if (/\b(help|what can you do|features|commands|capabilities)\b/i.test(msg)) return "HELP";
-
-  // --- Conversational intents (lowest priority) ---
   if (/\b(talk|chat|conversation|are you sentient)\b/i.test(msg)) return "CONVERSATION";
   if (/\b(hello|hi|hey|howdy|yo)\b/i.test(msg)) return "GREETING";
   
@@ -110,7 +106,55 @@ function parseDeleteCommand(command: string): { name: string | null, error?: str
   return { name: null, error: "I can delete a strategy, but I need its name. For example, 'delete my Tesla Scalper strategy'." };
 }
 
+function parseMarketDataCommand(command: string): { symbol: string | null, indicator: string | null, error?: string } {
+  const msg = command.toLowerCase();
+  const symbolMatch = command.match(/\b([A-Z]{1,5})\b/);
+  const symbol = symbolMatch ? symbolMatch[0] : null;
+
+  let indicator = 'price'; // default
+  if (/\b(rsi)\b/i.test(msg)) indicator = 'RSI';
+  if (/\b(sma50|50-period moving average)\b/i.test(msg)) indicator = 'SMA50';
+  if (/\b(sma200|200-period moving average)\b/i.test(msg)) indicator = 'SMA200';
+
+  if (!symbol) {
+    return { symbol: null, indicator: null, error: "I can get market data, but I need a valid stock symbol (e.g., AAPL, TSLA)." };
+  }
+  return { symbol, indicator };
+}
+
 // --- Database Interaction ---
+const MAX_REQUESTS = 15;
+async function checkAndIncrementUsage(supabase: SupabaseClient, userId: string): Promise<{ allowed: boolean, remaining: number }> {
+  const today = new Date().toISOString().split('T')[0];
+  
+  const { data, error } = await supabase
+    .from('daily_usage')
+    .select('market_data_requests')
+    .eq('user_id', userId)
+    .eq('usage_date', today)
+    .single();
+
+  if (error && error.code !== 'PGRST116') throw error;
+
+  const currentUsage = data?.market_data_requests || 0;
+
+  if (currentUsage >= MAX_REQUESTS) {
+    return { allowed: false, remaining: 0 };
+  }
+
+  const { error: upsertError } = await supabase
+    .from('daily_usage')
+    .upsert({
+      user_id: userId,
+      usage_date: today,
+      market_data_requests: currentUsage + 1,
+    }, { onConflict: 'user_id,usage_date' });
+
+  if (upsertError) throw upsertError;
+
+  return { allowed: true, remaining: MAX_REQUESTS - (currentUsage + 1) };
+}
+
 async function createStrategyInDB(supabase: SupabaseClient, userId: string, args: any) {
   const { error } = await supabase.from('strategies').insert({ ...args, user_id: userId, status: 'stopped' });
   if (error) throw new Error(error.message);
@@ -142,6 +186,46 @@ async function deleteStrategyFromDB(supabase: SupabaseClient, userId: string, na
 // --- Intent Handlers ---
 async function handleRequest(intent: Intent, message: string, supabase: SupabaseClient, user: any) {
   switch (intent) {
+    case "GET_MARKET_DATA": {
+      const { allowed, remaining } = await checkAndIncrementUsage(supabase, user.id);
+      if (!allowed) {
+        return { reply: "You have reached your daily limit of 15 market data requests. Please try again tomorrow.", success: false, remainingRequests: 0 };
+      }
+
+      const { symbol, indicator, error } = parseMarketDataCommand(message);
+      if (error || !symbol || !indicator) {
+        return { reply: error, success: false, remainingRequests: remaining };
+      }
+
+      const twelveDataApiKey = Deno.env.get("TWELVE_DATA_API_KEY");
+      if (!twelveDataApiKey) throw new Error("TWELVE_DATA_API_KEY is not set.");
+
+      let reply = "";
+      if (indicator === 'price') {
+        const data = await fetchTwelveData('price', { symbol }, twelveDataApiKey, supabase);
+        if (data && data.price) {
+          reply = `The current price of **${symbol}** is **$${parseFloat(data.price).toFixed(2)}**.`;
+        } else {
+          reply = `Sorry, I couldn't fetch the price for ${symbol}. Please check the symbol and try again.`;
+        }
+      } else {
+        const endpoint = indicator === 'RSI' ? 'rsi' : 'sma';
+        const time_period = indicator === 'RSI' ? '14' : indicator.replace('SMA', '');
+        const params = { symbol, interval: '15min', series_type: 'close', time_period };
+        const data = await fetchTwelveData(endpoint, params, twelveDataApiKey, supabase);
+        
+        if (data && data.values && data.values[0]) {
+          const key = indicator === 'RSI' ? 'rsi' : 'sma';
+          const value = parseFloat(data.values[0][key]).toFixed(2);
+          reply = `The current 15-minute **${indicator}** for **${symbol}** is **${value}**.`;
+        } else {
+          reply = `Sorry, I couldn't fetch the ${indicator} for ${symbol}.`;
+        }
+      }
+      
+      return { reply, success: true, remainingRequests: remaining };
+    }
+    // ... other cases
     case "GREETING":
       return { reply: "Hello! How can I help you with your trading strategies today?", success: false };
     
@@ -211,7 +295,9 @@ async function handleRequest(intent: Intent, message: string, supabase: Supabase
                "`Show me my strategies.`\n\n" +
                "**3. Delete a Strategy:**\n" +
                "`Delete my RSI Scalper strategy.`\n\n" +
-               "**4. Define Trading Terms:**\n" +
+               "**4. Get Market Data (15/day):**\n" +
+               "`What is the price of TSLA?`\n\n" +
+               "**5. Define Trading Terms:**\n" +
                "`What is a Simple Moving Average?`\n\n" +
                "I can also answer some basic 'how-to' questions about the app!",
         success: false
