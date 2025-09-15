@@ -33,7 +33,7 @@ export const ChatInterface = () => {
     return [
       {
         role: "assistant",
-        content: "Hello! I'm the new TradeRadar AI Assistant, powered by OpenAI. I can now understand much more complex requests.\n\nTry something like: 'Create a 15-minute strategy for NVDA called \"NVDA Scalper\" that triggers when the RSI is below 25.'",
+        content: "I am a command-based AI assistant. I can create trading strategies for you.\n\n**Example Command:**\n`Create a strategy called 'My AAPL Strategy' for symbol AAPL on a 15m timeframe when RSI < 30 and when Price crosses above SMA50.`\n\n- You must include at least one symbol and one condition.",
       },
     ];
   });
@@ -73,7 +73,7 @@ export const ChatInterface = () => {
       // Prepare messages for the API (only role and content)
       const apiMessages = newMessages.map(({ role, content }) => ({ role, content }));
 
-      const { data, error } = await supabase.functions.invoke('openai-assistant', {
+      const { data, error } = await supabase.functions.invoke('command-parser', {
         body: { messages: apiMessages },
       });
 
@@ -86,9 +86,7 @@ export const ChatInterface = () => {
       };
       setMessages((prev) => [...prev, assistantMessage]);
     } catch (error: any) {
-      const errorMessageContent = error.message.includes("OPENAI_API_KEY") 
-        ? "It seems the OpenAI API key is not configured. Please ask the administrator to set it up in the Supabase project secrets."
-        : `Error communicating with assistant: ${error.message}`;
+      const errorMessageContent = `Error communicating with assistant: ${error.message}`;
       
       toast.error(errorMessageContent);
       const errorMessage: Message = { role: "assistant", content: "Sorry, I encountered an error. Please check the console or contact support." };
@@ -167,7 +165,7 @@ export const ChatInterface = () => {
           <Input
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="Ask me to create a strategy..."
+            placeholder="Use the example command format..."
             disabled={isLoading}
           />
           <Button type="submit" disabled={isLoading}>
