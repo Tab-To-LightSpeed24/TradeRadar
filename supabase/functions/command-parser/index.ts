@@ -31,7 +31,12 @@ async function fetchTwelveData(
   const url = `https://api.twelvedata.com/${endpoint}?${query}`;
   
   try {
-    const res = await fetch(url);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000); // 8-second timeout
+
+    const res = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeoutId);
+
     if (!res.ok) throw new Error(`Request failed with status: ${res.status}`);
     const data = await res.json();
     if (data.code >= 400 || data.status === 'error') throw new Error(JSON.stringify(data));
@@ -45,6 +50,10 @@ async function fetchTwelveData(
     
     return data;
   } catch (error) {
+    if (error.name === 'AbortError') {
+      console.error(`  Timeout fetching from Twelve Data for: ${requestKey}`);
+      return { error: 'timeout', message: `The request to the market data provider timed out.` };
+    }
     console.error(`  Error fetching from Twelve Data:`, error.message);
     return null;
   }
@@ -167,35 +176,30 @@ function parseMarketDataCommand(command: string): { symbol: string | null, indic
 
 // --- Database Interaction ---
 const MAX_REQUESTS = 15;
-async function checkAndIncrementUsage(supabase: SupabaseClient, userId: string): Promise<{ allowed: boolean, remaining: number }> {
+
+async function getUsage(supabase: SupabaseClient, userId: string) {
   const today = new Date().toISOString().split('T')[0];
-  
   const { data, error } = await supabase
     .from('daily_usage')
     .select('market_data_requests')
     .eq('user_id', userId)
     .eq('usage_date', today)
     .single();
-
+  
   if (error && error.code !== 'PGRST116') throw error;
+  return data?.market_data_requests || 0;
+}
 
-  const currentUsage = data?.market_data_requests || 0;
-
-  if (currentUsage >= MAX_REQUESTS) {
-    return { allowed: false, remaining: 0 };
-  }
-
-  const { error: upsertError } = await supabase
+async function incrementUsage(supabase: SupabaseClient, userId: string, currentUsage: number) {
+  const today = new Date().toISOString().split('T')[0];
+  const { error } = await supabase
     .from('daily_usage')
     .upsert({
       user_id: userId,
       usage_date: today,
       market_data_requests: currentUsage + 1,
     }, { onConflict: 'user_id,usage_date' });
-
-  if (upsertError) throw upsertError;
-
-  return { allowed: true, remaining: MAX_REQUESTS - (currentUsage + 1) };
+  if (error) throw error;
 }
 
 async function createStrategyInDB(supabase: SupabaseClient, userId: string, args: any) {
@@ -230,45 +234,51 @@ async function deleteStrategyFromDB(supabase: SupabaseClient, userId: string, na
 async function handleRequest(intent: Intent, message: string, supabase: SupabaseClient, user: any) {
   switch (intent) {
     case "GET_MARKET_DATA": {
-      const { allowed, remaining } = await checkAndIncrementUsage(supabase, user.id);
-      if (!allowed) {
+      const currentUsage = await getUsage(supabase, user.id);
+      if (currentUsage >= MAX_REQUESTS) {
         return { reply: "You have reached your daily limit of 15 market data requests. Please try again tomorrow.", success: false, remainingRequests: 0 };
       }
 
-      const { symbol, indicator, error } = parseMarketDataCommand(message);
-      if (error || !symbol || !indicator) {
-        return { reply: error, success: false, remainingRequests: remaining };
+      const { symbol, indicator, error: parseError } = parseMarketDataCommand(message);
+      if (parseError || !symbol || !indicator) {
+        return { reply: parseError, success: false, remainingRequests: MAX_REQUESTS - currentUsage };
       }
 
       const twelveDataApiKey = Deno.env.get("TWELVE_DATA_API_KEY");
       if (!twelveDataApiKey) throw new Error("TWELVE_DATA_API_KEY is not set.");
 
+      const endpoint = indicator === 'RSI' ? 'rsi' : (indicator.startsWith('SMA') ? 'sma' : 'price');
+      const params = { 
+        symbol, 
+        interval: '15min', 
+        series_type: 'close',
+        ...(indicator === 'RSI' && { time_period: '14' }),
+        ...(indicator.startsWith('SMA') && { time_period: indicator.replace('SMA', '') })
+      };
+      
+      const data = await fetchTwelveData(endpoint, params, twelveDataApiKey, supabase);
+
+      if (!data || (data.code >= 400 || data.status === 'error')) {
+        return { reply: `Sorry, I couldn't fetch data for ${symbol}. Please check the symbol and try again.`, success: false, remainingRequests: MAX_REQUESTS - currentUsage };
+      }
+      if (data.error === 'timeout') {
+        return { reply: `Sorry, the request for ${symbol} data timed out. Please try again in a moment.`, success: false, remainingRequests: MAX_REQUESTS - currentUsage };
+      }
+
+      // --- Success: Increment usage and format reply ---
+      await incrementUsage(supabase, user.id, currentUsage);
       let reply = "";
+
       if (indicator === 'price') {
-        const data = await fetchTwelveData('price', { symbol }, twelveDataApiKey, supabase);
-        if (data && data.price) {
-          reply = `The current price of **${symbol}** is **$${parseFloat(data.price).toFixed(2)}**.`;
-        } else {
-          reply = `Sorry, I couldn't fetch the price for ${symbol}. Please check the symbol and try again.`;
-        }
+        reply = `The current price of **${symbol}** is **$${parseFloat(data.price).toFixed(2)}**.`;
       } else {
-        const endpoint = indicator === 'RSI' ? 'rsi' : 'sma';
-        const time_period = indicator === 'RSI' ? '14' : indicator.replace('SMA', '');
-        const params = { symbol, interval: '15min', series_type: 'close', time_period };
-        const data = await fetchTwelveData(endpoint, params, twelveDataApiKey, supabase);
-        
-        if (data && data.values && data.values[0]) {
-          const key = indicator === 'RSI' ? 'rsi' : 'sma';
-          const value = parseFloat(data.values[0][key]).toFixed(2);
-          reply = `The current 15-minute **${indicator}** for **${symbol}** is **${value}**.`;
-        } else {
-          reply = `Sorry, I couldn't fetch the ${indicator} for ${symbol}.`;
-        }
+        const key = indicator === 'RSI' ? 'rsi' : 'sma';
+        const value = parseFloat(data.values[0][key]).toFixed(2);
+        reply = `The current 15-minute **${indicator}** for **${symbol}** is **${value}**.`;
       }
       
-      return { reply, success: true, remainingRequests: remaining };
+      return { reply, success: true, remainingRequests: MAX_REQUESTS - (currentUsage + 1) };
     }
-    // ... other cases
     case "GREETING":
       return { reply: "Hello! How can I help you with your trading strategies today?", success: false };
     
