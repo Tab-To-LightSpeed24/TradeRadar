@@ -98,9 +98,12 @@ export const ChatInterface = () => {
   };
 
   const parseContent = (content: string) => {
-    content = content.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-    content = content.replace(/`(.*?)`/g, '<code class="bg-muted text-foreground px-1 py-0.5 rounded-sm font-mono text-sm">$1</code>');
-    return { __html: content };
+    if (!content) {
+      return { __html: '' };
+    }
+    let parsedContent = content.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+    parsedContent = parsedContent.replace(/`(.*?)`/g, '<code class="bg-muted text-foreground px-1 py-0.5 rounded-sm font-mono text-sm">$1</code>');
+    return { __html: parsedContent };
   };
 
   const suggestionPrompts = [
