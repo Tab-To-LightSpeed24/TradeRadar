@@ -15,20 +15,36 @@ const knowledgeBase: { [key: string]: string } = {
 };
 
 // --- Intent Recognition ---
-type Intent = "GREETING" | "CREATE_STRATEGY" | "LIST_STRATEGIES" | "QUESTION_TRADING_CONCEPT" | "HELP" | "FALLBACK";
+type Intent = 
+  | "GREETING" 
+  | "CREATE_STRATEGY" 
+  | "LIST_STRATEGIES" 
+  | "DELETE_STRATEGY"
+  | "QUESTION_TRADING_CONCEPT" 
+  | "HOW_TO_EXPORT"
+  | "TROUBLESHOOT_ALERTS"
+  | "CONVERSATION"
+  | "HELP" 
+  | "FALLBACK";
 
 function getIntent(message: string): Intent {
   const msg = message.toLowerCase();
   
-  // Action-oriented intents get highest priority
+  // --- Action-oriented intents (highest priority) ---
+  if (/\b(delete|remove|get rid of)\b.*\b(strategy)\b/i.test(msg)) return "DELETE_STRATEGY";
   if (/\b(create|build|make|set up)\b.*\b(strategy)\b/i.test(msg)) return "CREATE_STRATEGY";
   if (/\b(list|show|see|what are my|get my)\b.*\b(strategies|strats)\b/i.test(msg)) return "LIST_STRATEGIES";
   
-  // Informational intents are next
-  if (/\b(what is|what's|define|explain|tell me about)\b/i.test(msg)) return "QUESTION_TRADING_CONCEPT";
-  if (/\b(help|what can you do|features|commands|how does this work|capabilities)\b/i.test(msg)) return "HELP";
+  // --- "How-to" and Troubleshooting intents ---
+  if (/\b(export|download|csv)\b.*\b(journal|trades|history)\b/i.test(msg)) return "HOW_TO_EXPORT";
+  if (/\b(alerts? aren't working|troubleshoot|not getting alerts|alerts? broken|debug)\b/i.test(msg)) return "TROUBLESHOOT_ALERTS";
 
-  // Conversational intents have the lowest priority
+  // --- Informational intents ---
+  if (/\b(what is|what's|define|explain|tell me about)\b/i.test(msg)) return "QUESTION_TRADING_CONCEPT";
+  if (/\b(help|what can you do|features|commands|capabilities)\b/i.test(msg)) return "HELP";
+
+  // --- Conversational intents (lowest priority) ---
+  if (/\b(talk|chat|conversation|are you sentient)\b/i.test(msg)) return "CONVERSATION";
   if (/\b(hello|hi|hey|howdy|yo)\b/i.test(msg)) return "GREETING";
   
   return "FALLBACK";
@@ -86,11 +102,41 @@ function parseStrategyCommand(command: string) {
   return { strategy };
 }
 
+function parseDeleteCommand(command: string): { name: string | null, error?: string } {
+  const match = command.match(/(?:delete|remove|get rid of) (?:my |the )?['"]?([^'"]+)['"]? strategy/i);
+  if (match && match[1]) {
+    return { name: match[1].trim() };
+  }
+  return { name: null, error: "I can delete a strategy, but I need its name. For example, 'delete my Tesla Scalper strategy'." };
+}
+
 // --- Database Interaction ---
 async function createStrategyInDB(supabase: SupabaseClient, userId: string, args: any) {
   const { error } = await supabase.from('strategies').insert({ ...args, user_id: userId, status: 'stopped' });
   if (error) throw new Error(error.message);
   return { reply: `Successfully created the "${args.name}" strategy. You can view and activate it on the Strategies page.`, success: true };
+}
+
+async function deleteStrategyFromDB(supabase: SupabaseClient, userId: string, name: string) {
+  const { data, error: findError } = await supabase
+    .from('strategies')
+    .select('id, name')
+    .eq('user_id', userId)
+    .ilike('name', `%${name}%`);
+
+  if (findError) throw new Error(findError.message);
+  if (!data || data.length === 0) {
+    return { reply: `I couldn't find a strategy with a name similar to "${name}". Please check the name and try again.`, success: false };
+  }
+  if (data.length > 1) {
+    return { reply: `I found multiple strategies with names similar to "${name}". Please be more specific.`, success: false };
+  }
+
+  const strategyToDelete = data[0];
+  const { error: deleteError } = await supabase.from('strategies').delete().eq('id', strategyToDelete.id);
+  if (deleteError) throw new Error(deleteError.message);
+
+  return { reply: `Successfully deleted the "${strategyToDelete.name}" strategy.`, success: true };
 }
 
 // --- Intent Handlers ---
@@ -99,12 +145,13 @@ async function handleRequest(intent: Intent, message: string, supabase: Supabase
     case "GREETING":
       return { reply: "Hello! How can I help you with your trading strategies today?", success: false };
     
-    case "CREATE_STRATEGY":
+    case "CREATE_STRATEGY": {
       const { strategy, error } = parseStrategyCommand(message);
       if (error) return { reply: error, success: false };
       return await createStrategyInDB(supabase, user.id, strategy);
+    }
 
-    case "LIST_STRATEGIES":
+    case "LIST_STRATEGIES": {
       const { data, error: listError } = await supabase.from('strategies').select('name, status').eq('user_id', user.id);
       if (listError) throw new Error(listError.message);
       if (!data || data.length === 0) {
@@ -112,8 +159,40 @@ async function handleRequest(intent: Intent, message: string, supabase: Supabase
       }
       const strategyList = data.map(s => `- **${s.name}** (Status: ${s.status})`).join('\n');
       return { reply: `Here are your current strategies:\n\n${strategyList}`, success: false };
+    }
 
-    case "QUESTION_TRADING_CONCEPT":
+    case "DELETE_STRATEGY": {
+      const { name, error } = parseDeleteCommand(message);
+      if (error || !name) return { reply: error, success: false };
+      return await deleteStrategyFromDB(supabase, user.id, name);
+    }
+
+    case "HOW_TO_EXPORT":
+      return {
+        reply: "You can export your trade history directly from the **Trade Journal** page.\n\n" +
+               "1. Go to the `Trade Journal` page from the sidebar.\n" +
+               "2. Click the `Export` button near the top right.\n" +
+               "3. A CSV file of your trades will be downloaded.",
+        success: false
+      };
+
+    case "TROUBLESHOOT_ALERTS":
+      return {
+        reply: "If you're not receiving alerts, here are a few things to check:\n\n" +
+               "1. **Is the strategy running?** Go to the `Strategies` page and make sure the strategy has a green 'Running' status.\n" +
+               "2. **Are the conditions being met?** Market conditions might not be triggering your strategy right now.\n" +
+               "3. **Are Telegram settings correct?** On the `Settings` page, double-check your Bot Token and Chat ID, and ensure Telegram alerts are enabled.\n" +
+               "4. **Did you invoke the engine?** The strategy engine runs periodically, but you can trigger a manual run from the `Dashboard` to test it.",
+        success: false
+      };
+
+    case "CONVERSATION":
+      return {
+        reply: "I am an AI assistant designed to help you with trading strategies. I can't hold a general conversation, but I'm great at creating, listing, and deleting strategies, and defining trading terms. How can I help you with those tasks?",
+        success: false
+      };
+
+    case "QUESTION_TRADING_CONCEPT": {
       const msg = message.toLowerCase();
       for (const key in knowledgeBase) {
         if (msg.includes(key)) {
@@ -121,6 +200,7 @@ async function handleRequest(intent: Intent, message: string, supabase: Supabase
         }
       }
       return { reply: "I can answer questions about basic terms like `RSI`, `SMA`, and `timeframe`. What would you like to know?", success: false };
+    }
 
     case "HELP":
       return {
@@ -129,9 +209,11 @@ async function handleRequest(intent: Intent, message: string, supabase: Supabase
                "`Create a strategy for AAPL when RSI < 30.`\n\n" +
                "**2. List Your Strategies:**\n" +
                "`Show me my strategies.`\n\n" +
-               "**3. Define Trading Terms:**\n" +
+               "**3. Delete a Strategy:**\n" +
+               "`Delete my RSI Scalper strategy.`\n\n" +
+               "**4. Define Trading Terms:**\n" +
                "`What is a Simple Moving Average?`\n\n" +
-               "Just type your command and I'll do my best to help!",
+               "I can also answer some basic 'how-to' questions about the app!",
         success: false
       };
 
@@ -173,7 +255,7 @@ serve(async (req) => {
     const response = await handleRequest(intent, userMessage, supabase, user);
 
     return new Response(JSON.stringify(response), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      headers: { ...corsHeaders, "Content-Type": "application-json" },
     });
 
   } catch (error) {
