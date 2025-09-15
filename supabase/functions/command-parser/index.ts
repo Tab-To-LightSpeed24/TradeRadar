@@ -9,19 +9,21 @@ const corsHeaders = {
 // --- Knowledge Base for Trading Questions ---
 const knowledgeBase: { [key: string]: string } = {
   "rsi": "The Relative Strength Index (RSI) is a momentum indicator that measures the speed and change of price movements. It is typically used on a 14-period timeframe and is considered overbought when above 70 and oversold when below 30.",
-  "sma": "A Simple Moving Average (SMA) is a technical indicator that calculates the average of a selected range of prices, usually closing prices, by the number of periods in that range. For example, SMA50 is the average price over the last 50 periods.",
+  "sma": "A Simple Moving Average (SMA) is a technical indicator that calculates the average of a selected range of prices, usually closing prices, by the number of periods in that range. For example, `SMA50` is the average price over the last 50 periods.",
   "moving average": "A moving average is a stock indicator that is commonly used in technical analysis. The reason for calculating the moving average of a stock is to help smooth out the price data by creating a constantly updated average price.",
-  "timeframe": "In trading, a timeframe refers to the period of time that a trader chooses to observe the market. Common timeframes include 1-minute (1m), 15-minute (15m), 1-hour (1h), 4-hour (4h), and 1-day (1d). Shorter timeframes are typically used for scalping, while longer timeframes are used for swing or position trading.",
+  "timeframe": "In trading, a timeframe refers to the period of time that a trader chooses to observe the market. Common timeframes include 1-minute (`1m`), 15-minute (`15m`), 1-hour (`1h`), 4-hour (`4h`), and 1-day (`1d`). Shorter timeframes are typically used for scalping, while longer timeframes are used for swing or position trading.",
 };
 
 // --- Intent Recognition ---
-type Intent = "GREETING" | "CREATE_STRATEGY" | "QUESTION_TRADING_CONCEPT" | "FALLBACK";
+type Intent = "GREETING" | "CREATE_STRATEGY" | "LIST_STRATEGIES" | "QUESTION_TRADING_CONCEPT" | "HELP" | "FALLBACK";
 
 function getIntent(message: string): Intent {
   const msg = message.toLowerCase();
   // Prioritize specific actions over general greetings
   if (/\b(create|build|make)\b.*\b(strategy)\b/i.test(msg)) return "CREATE_STRATEGY";
+  if (/\b(list|show|see)\b.*\b(strategies)\b/i.test(msg)) return "LIST_STRATEGIES";
   if (/\b(what is|what's|define|explain)\b/i.test(msg)) return "QUESTION_TRADING_CONCEPT";
+  if (/\b(help|what can you do)\b/i.test(msg)) return "HELP";
   if (/\b(hello|hi|hey|howdy)\b/i.test(msg)) return "GREETING";
   return "FALLBACK";
 }
@@ -69,8 +71,11 @@ function parseStrategyCommand(command: string) {
     }
   }
 
-  if (!strategy.symbols || strategy.symbols.length === 0 || strategy.conditions.length === 0) {
-    return { error: "I couldn't fully understand the command. Please use the example format, ensuring you include at least one symbol (e.g., 'for TSLA') and one condition (e.g., 'when RSI is below 30')." };
+  if (!strategy.symbols || strategy.symbols.length === 0) {
+    return { error: "I can create that strategy, but I need to know which stock symbol(s) to use. For example, '... for symbol AAPL ...'." };
+  }
+  if (strategy.conditions.length === 0) {
+     return { error: "I can create that strategy, but I need at least one condition. For example, '... when RSI < 30 ...'." };
   }
   return { strategy };
 }
@@ -93,6 +98,15 @@ async function handleRequest(intent: Intent, message: string, supabase: Supabase
       if (error) return { reply: error, success: false };
       return await createStrategyInDB(supabase, user.id, strategy);
 
+    case "LIST_STRATEGIES":
+      const { data, error: listError } = await supabase.from('strategies').select('name, status').eq('user_id', user.id);
+      if (listError) throw new Error(listError.message);
+      if (!data || data.length === 0) {
+        return { reply: "You don't have any strategies yet. Try creating one!", success: false };
+      }
+      const strategyList = data.map(s => `- **${s.name}** (Status: ${s.status})`).join('\n');
+      return { reply: `Here are your current strategies:\n\n${strategyList}`, success: false };
+
     case "QUESTION_TRADING_CONCEPT":
       const msg = message.toLowerCase();
       for (const key in knowledgeBase) {
@@ -100,11 +114,24 @@ async function handleRequest(intent: Intent, message: string, supabase: Supabase
           return { reply: knowledgeBase[key], success: false };
         }
       }
-      return { reply: "I can answer questions about basic terms like RSI, SMA, and timeframe. What would you like to know?", success: false };
+      return { reply: "I can answer questions about basic terms like `RSI`, `SMA`, and `timeframe`. What would you like to know?", success: false };
+
+    case "HELP":
+      return {
+        reply: "I'm a command-based AI assistant. Here's what I can do:\n\n" +
+               "**1. Create Strategies:**\n" +
+               "`Create a strategy for AAPL when RSI < 30.`\n\n" +
+               "**2. List Your Strategies:**\n" +
+               "`Show me my strategies.`\n\n" +
+               "**3. Define Trading Terms:**\n" +
+               "`What is a Simple Moving Average?`\n\n" +
+               "Just type your command and I'll do my best to help!",
+        success: false
+      };
 
     case "FALLBACK":
     default:
-      return { reply: "I'm not sure how to help with that. I can create strategies (e.g., 'Create a strategy for AAPL...') or define trading terms (e.g., 'What is RSI?').", success: false };
+      return { reply: "I'm not sure how to help with that. I can create strategies, list your existing ones, or define trading terms. Type `help` to see a list of commands.", success: false };
   }
 }
 

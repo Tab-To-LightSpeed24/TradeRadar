@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Send, Bot, User, Loader2, Sparkles } from "lucide-react";
+import { Send, Bot, User, Loader2, Sparkles, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
@@ -19,59 +19,50 @@ interface Message {
 }
 
 const CHAT_HISTORY_KEY = 'traderadar-chat-history';
+const initialMessage: Message = {
+  role: "assistant",
+  content: "I am an AI assistant. I can create and list trading strategies, and define common trading terms.\n\nType **help** to see a list of commands, or try one of the suggestions below.",
+};
 
 export const ChatInterface = () => {
   const [messages, setMessages] = useState<Message[]>(() => {
     try {
       const savedHistory = localStorage.getItem(CHAT_HISTORY_KEY);
-      if (savedHistory) {
-        return JSON.parse(savedHistory);
-      }
+      return savedHistory ? JSON.parse(savedHistory) : [initialMessage];
     } catch (error) {
       console.error("Failed to parse chat history from localStorage", error);
+      return [initialMessage];
     }
-    return [
-      {
-        role: "assistant",
-        content: "I am a command-based AI assistant. I can create trading strategies for you.\n\n**Example Command:**\n`Create a strategy called 'My AAPL Strategy' for symbol AAPL on a 15m timeframe when RSI < 30 and when Price crosses above SMA50.`\n\n- You must include at least one symbol and one condition.",
-      },
-    ];
   });
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const scrollAreaRef = useRef<HTMLDivElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
 
   useEffect(() => {
     try {
-      // Filter out non-serializable properties before saving
       const serializableMessages = messages.map(({ role, content, hasAction }) => ({ role, content, hasAction }));
       localStorage.setItem(CHAT_HISTORY_KEY, JSON.stringify(serializableMessages));
     } catch (error) {
       console.error("Failed to save chat history to localStorage", error);
     }
-
-    if (scrollAreaRef.current) {
-      scrollAreaRef.current.scrollTo({
-        top: scrollAreaRef.current.scrollHeight,
-        behavior: "smooth",
-      });
-    }
+    scrollToBottom();
   }, [messages]);
 
-  const handleSendMessage = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!input.trim() || isLoading) return;
+  const sendMessage = async (messageContent: string) => {
+    if (!messageContent.trim() || isLoading) return;
 
-    const userMessage: Message = { role: "user", content: input };
-    const newMessages = [...messages, userMessage];
-    setMessages(newMessages);
+    const userMessage: Message = { role: "user", content: messageContent };
+    setMessages((prev) => [...prev, userMessage]);
     setInput("");
     setIsLoading(true);
 
     try {
-      // Prepare messages for the API (only role and content)
-      const apiMessages = newMessages.map(({ role, content }) => ({ role, content }));
+      const apiMessages = [...messages, userMessage].map(({ role, content }) => ({ role, content }));
 
       const { data, error } = await supabase.functions.invoke('command-parser', {
         body: { messages: apiMessages },
@@ -87,7 +78,6 @@ export const ChatInterface = () => {
       setMessages((prev) => [...prev, assistantMessage]);
     } catch (error: any) {
       const errorMessageContent = `Error communicating with assistant: ${error.message}`;
-      
       toast.error(errorMessageContent);
       const errorMessage: Message = { role: "assistant", content: "Sorry, I encountered an error. Please check the console or contact support." };
       setMessages((prev) => [...prev, errorMessage]);
@@ -96,16 +86,42 @@ export const ChatInterface = () => {
     }
   };
 
+  const handleSendMessage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    sendMessage(input);
+  };
+
+  const handleClearChat = () => {
+    setMessages([initialMessage]);
+    localStorage.removeItem(CHAT_HISTORY_KEY);
+    toast.info("Chat history cleared.");
+  };
+
+  const parseContent = (content: string) => {
+    content = content.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+    content = content.replace(/`(.*?)`/g, '<code class="bg-muted text-foreground px-1 py-0.5 rounded-sm font-mono text-sm">$1</code>');
+    return { __html: content };
+  };
+
+  const suggestionPrompts = [
+    "Create a strategy for TSLA",
+    "What is SMA?",
+    "Show me my strategies",
+  ];
+
   return (
     <Card className="h-full flex flex-col">
-      <CardHeader>
+      <CardHeader className="flex flex-row items-center justify-between">
         <CardTitle className="flex items-center gap-2">
           <Bot />
           TradeRadar AI Assistant
         </CardTitle>
+        <Button variant="ghost" size="icon" onClick={handleClearChat} title="Clear chat history">
+          <Trash2 className="h-4 w-4" />
+        </Button>
       </CardHeader>
       <CardContent className="flex-grow flex flex-col gap-4 overflow-hidden">
-        <ScrollArea className="flex-grow pr-4" ref={scrollAreaRef}>
+        <ScrollArea className="flex-grow pr-4">
           <div className="space-y-4">
             {messages.map((message, index) => (
               <div
@@ -128,7 +144,7 @@ export const ChatInterface = () => {
                       : "bg-muted"
                   )}
                 >
-                  <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+                  <p className="text-sm whitespace-pre-wrap" dangerouslySetInnerHTML={parseContent(message.content)} />
                   {message.hasAction && (
                     <div className="mt-2">
                       <Button 
@@ -159,13 +175,25 @@ export const ChatInterface = () => {
                 </div>
               </div>
             )}
+            <div ref={messagesEndRef} />
           </div>
         </ScrollArea>
+        
+        {messages.length <= 2 && !isLoading && (
+          <div className="flex flex-wrap gap-2 pt-2 border-t">
+            {suggestionPrompts.map((prompt, i) => (
+              <Button key={i} variant="outline" size="sm" onClick={() => sendMessage(prompt)}>
+                {prompt}
+              </Button>
+            ))}
+          </div>
+        )}
+
         <form onSubmit={handleSendMessage} className="flex items-center gap-2 pt-4 border-t">
           <Input
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="Use the example command format..."
+            placeholder="Type 'help' or ask a question..."
             disabled={isLoading}
           />
           <Button type="submit" disabled={isLoading}>
