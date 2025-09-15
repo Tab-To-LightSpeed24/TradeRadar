@@ -45,7 +45,7 @@ function parseStrategyCommand(command: string) {
   const nameMatch = command.match(/(?:name it|named|called) ['"]?([^'"]+)['"]?/i);
   strategy.name = nameMatch ? nameMatch[1].trim() : `AI Strategy - ${new Date().toLocaleTimeString()}`;
 
-  const symbolMatch = command.match(/for (?:symbol[s]?)?([A-Z0-9/,\s]+?)(?: on | when | name |,|$/i);
+  const symbolMatch = command.match(/for (?:symbol[s]?)?([A-Z0-9/,\s]+?)(?: on | when | name |,|$)/i);
   if (symbolMatch) {
     strategy.symbols = symbolMatch[1].split(',').map(s => s.trim()).filter(Boolean);
   }
