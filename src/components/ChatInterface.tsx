@@ -15,7 +15,7 @@ import { toast } from "sonner";
 interface Message {
   role: "user" | "assistant";
   content: string;
-  actions?: React.ReactNode;
+  hasAction?: boolean; // Use a serializable flag instead of a ReactNode
 }
 
 const CHAT_HISTORY_KEY = 'traderadar-chat-history';
@@ -76,17 +76,7 @@ export const ChatInterface = () => {
       const assistantMessage: Message = { 
         role: "assistant", 
         content: data.reply,
-        actions: data.success ? (
-          <Button 
-            variant="outline" 
-            size="sm" 
-            className="mt-2"
-            onClick={() => navigate('/strategies')}
-          >
-            <Sparkles className="w-4 h-4 mr-2" />
-            View Strategies
-          </Button>
-        ) : undefined,
+        hasAction: data.success, // Set the flag based on the response
       };
       setMessages((prev) => [...prev, assistantMessage]);
     } catch (error: any) {
@@ -131,7 +121,19 @@ export const ChatInterface = () => {
                   )}
                 >
                   <p className="text-sm whitespace-pre-wrap">{message.content}</p>
-                  {message.actions && <div className="mt-2">{message.actions}</div>}
+                  {/* Render the button conditionally based on the flag */}
+                  {message.hasAction && (
+                    <div className="mt-2">
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        onClick={() => navigate('/strategies')}
+                      >
+                        <Sparkles className="w-4 h-4 mr-2" />
+                        View Strategies
+                      </Button>
+                    </div>
+                  )}
                 </div>
                 {message.role === "user" && (
                   <Avatar className="h-8 w-8">
