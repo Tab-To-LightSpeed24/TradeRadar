@@ -132,7 +132,7 @@ serve(async (req) => {
           [c.indicator, c.value].filter(v => ['RSI', 'SMA50', 'SMA200'].includes(v))
         ));
         
-        const baseParams = { symbol, timezone: 'exchange', prepost: 'true' };
+        const baseParams = { symbol, timezone: 'exchange' };
         const priceCall = fetchTwelveData('price', { symbol }, twelveDataApiKey, supabase);
         const indicatorCalls = Array.from(required).map(ind => {
           const endpoint = ind === 'RSI' ? 'rsi' : 'sma';
