@@ -11,11 +11,15 @@ const corsHeaders = {
 function normalizeOperator(op: string): string {
   const map: { [key: string]: string } = {
     "is greater than": ">",
+    "is above": ">",
+    "greater than": ">",
+    ">": ">",
     "is less than": "<",
+    "is below": "<",
+    "less than": "<",
+    "<": "<",
     "crosses above": "crosses_above",
     "crosses below": "crosses_below",
-    ">": ">",
-    "<": "<",
   };
   return map[op.toLowerCase().trim()] || ">";
 }
@@ -29,37 +33,34 @@ function parseStrategyCommand(command: string) {
     conditions: [],
   };
 
-  // Extract name (optional, can be generated)
-  const nameMatch = command.match(/(?:create|make) a strategy (?:called|named) ['"]?([^'"]+)['"]?/i);
+  // Extract name
+  const nameMatch = command.match(/(?:called|named|name it) ['"]?([^'"]+)['"]?/i);
   strategy.name = nameMatch ? nameMatch[1] : `My AI Strategy ${new Date().toLocaleTimeString()}`;
 
   // Extract symbols
-  const symbolMatch = command.match(/for symbol[s]? ([A-Z,\s]+)/i);
+  const symbolMatch = command.match(/for (?:symbol[s]?)?([A-Z0-9,\s/]+)/i);
   if (symbolMatch) {
     strategy.symbols = symbolMatch[1].split(',').map(s => s.trim()).filter(Boolean);
   }
 
   // Extract timeframe
-  const timeframeMatch = command.match(/on a (\d+[mhd]) timeframe/i);
-  strategy.timeframe = timeframeMatch ? timeframeMatch[1] : '15m'; // Default timeframe
+  const timeframeMatch = command.match(/on (?:a |the )?(\d+(?:m|h|d))/i);
+  strategy.timeframe = timeframeMatch ? timeframeMatch[1] : '15m';
 
   // Extract conditions
-  const conditionRegex = /when (the )?(Price|RSI|SMA50|SMA200) (is greater than|is less than|crosses above|crosses below|>|<) (the )?(\d+|Price|RSI|SMA50|SMA200)/gi;
+  const conditionRegex = /when (?:the )?(Price|RSI|SMA50|SMA200)\s+(is greater than|is above|greater than|>|is less than|is below|less than|<|crosses above|crosses below)\s+(?:the )?(\d+|Price|RSI|SMA50|SMA200)/gi;
   let match;
   while ((match = conditionRegex.exec(command)) !== null) {
     strategy.conditions.push({
-      indicator: match[2],
-      operator: normalizeOperator(match[3]),
-      value: match[5],
+      indicator: match[1],
+      operator: normalizeOperator(match[2]),
+      value: match[3],
     });
   }
 
   // Validation
-  if (!strategy.symbols || strategy.symbols.length === 0) {
-    return { error: "I couldn't find any symbols. Please specify at least one symbol, like 'for symbol AAPL'." };
-  }
-  if (strategy.conditions.length === 0) {
-    return { error: "I couldn't find any conditions. Please add a condition, like 'when RSI < 30'." };
+  if (!strategy.symbols || strategy.symbols.length === 0 || strategy.conditions.length === 0) {
+    return { error: "I couldn't understand the command. Please use the example format, making sure to include at least one symbol (e.g., 'for TSLA') and one condition (e.g., 'when RSI is below 30')." };
   }
 
   return { strategy };
@@ -97,15 +98,15 @@ serve(async (req) => {
     const { data: { user }, error: userError } = await supabase.auth.getUser();
     if (userError || !user) throw new Error("Authentication failed.");
 
-    const { strategy, error: parseError } = parseStrategyCommand(userMessage);
+    const parseResult = parseStrategyCommand(userMessage);
 
-    if (parseError) {
-      return new Response(JSON.stringify({ reply: parseError.error, success: false }), {
+    if (parseResult.error) {
+      return new Response(JSON.stringify({ reply: parseResult.error, success: false }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const result = await create_strategy(supabase, user.id, strategy);
+    const result = await create_strategy(supabase, user.id, parseResult.strategy);
 
     return new Response(JSON.stringify({ reply: result, success: true }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
