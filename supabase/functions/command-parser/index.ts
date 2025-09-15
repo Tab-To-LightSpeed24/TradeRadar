@@ -19,12 +19,18 @@ type Intent = "GREETING" | "CREATE_STRATEGY" | "LIST_STRATEGIES" | "QUESTION_TRA
 
 function getIntent(message: string): Intent {
   const msg = message.toLowerCase();
-  // Prioritize specific actions over general greetings
-  if (/\b(create|build|make)\b.*\b(strategy)\b/i.test(msg)) return "CREATE_STRATEGY";
-  if (/\b(list|show|see)\b.*\b(strategies)\b/i.test(msg)) return "LIST_STRATEGIES";
-  if (/\b(what is|what's|define|explain)\b/i.test(msg)) return "QUESTION_TRADING_CONCEPT";
-  if (/\b(help|what can you do|features)\b/i.test(msg)) return "HELP";
-  if (/\b(hello|hi|hey|howdy)\b/i.test(msg)) return "GREETING";
+  
+  // Action-oriented intents get highest priority
+  if (/\b(create|build|make|set up)\b.*\b(strategy)\b/i.test(msg)) return "CREATE_STRATEGY";
+  if (/\b(list|show|see|what are my|get my)\b.*\b(strategies|strats)\b/i.test(msg)) return "LIST_STRATEGIES";
+  
+  // Informational intents are next
+  if (/\b(what is|what's|define|explain|tell me about)\b/i.test(msg)) return "QUESTION_TRADING_CONCEPT";
+  if (/\b(help|what can you do|features|commands|how does this work|capabilities)\b/i.test(msg)) return "HELP";
+
+  // Conversational intents have the lowest priority
+  if (/\b(hello|hi|hey|howdy|yo)\b/i.test(msg)) return "GREETING";
+  
   return "FALLBACK";
 }
 
@@ -91,7 +97,7 @@ async function createStrategyInDB(supabase: SupabaseClient, userId: string, args
 async function handleRequest(intent: Intent, message: string, supabase: SupabaseClient, user: any) {
   switch (intent) {
     case "GREETING":
-      return { reply: "Hello! How can I help you create a trading strategy today?", success: false };
+      return { reply: "Hello! How can I help you with your trading strategies today?", success: false };
     
     case "CREATE_STRATEGY":
       const { strategy, error } = parseStrategyCommand(message);
@@ -131,7 +137,15 @@ async function handleRequest(intent: Intent, message: string, supabase: Supabase
 
     case "FALLBACK":
     default:
-      return { reply: "I'm not sure how to help with that. I can create strategies, list your existing ones, or define trading terms. Type `help` to see a list of commands.", success: false };
+      return { 
+        reply: "Sorry, I didn't understand that. I'm best at creating and listing strategies, or defining trading terms.\n\n" +
+               "For example, you could say:\n" +
+               "- `Create a strategy for GOOG when price > SMA50`\n" +
+               "- `Show my strategies`\n" +
+               "- `What is RSI?`\n\n" +
+               "Type `help` for a full list of commands.",
+        success: false 
+      };
   }
 }
 
