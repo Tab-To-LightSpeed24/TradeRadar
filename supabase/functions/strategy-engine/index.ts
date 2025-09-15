@@ -14,6 +14,11 @@ interface StrategyCondition {
   value: string;
 }
 
+interface IndicatorPoint {
+  value: number | null;
+  timestamp: string | null;
+}
+
 // --- Helper Functions ---
 
 function mapTimeframeToTwelveData(timeframe: string): string {
@@ -54,9 +59,13 @@ async function fetchTwelveData(
   }
 }
 
-function getLatestIndicatorValue(data: any, key: string): number | null {
-  if (!data?.values?.[0]) return null;
-  return parseFloat(data.values[0][key]);
+function getLatestIndicatorPoint(data: any, key: string): IndicatorPoint {
+  if (!data?.values?.[0]) return { value: null, timestamp: null };
+  const latest = data.values[0];
+  return {
+    value: parseFloat(latest[key]),
+    timestamp: latest.datetime,
+  };
 }
 
 function evaluateCondition(
@@ -83,7 +92,6 @@ async function sendTelegramAlert(
   const { token, chatId } = settings;
   const { strategyName, symbol, price } = alertData;
   
-  // Using MarkdownV2 requires escaping special characters
   const message = `*TradeRadar Alert* 🚀\n\n` +
                   `*Strategy:* ${strategyName}\n` +
                   `*Symbol:* ${symbol}\n` +
@@ -144,22 +152,31 @@ serve(async (req) => {
         const currentPrice = priceData ? parseFloat(priceData.price) : null;
         if (currentPrice === null) continue;
 
-        const indicatorValues: Record<string, number | null> = {};
+        const indicatorPoints: Record<string, IndicatorPoint> = {};
+        let alertTimestamp: string | null = null;
+
         Array.from(required).forEach((ind, i) => {
           const key = ind === 'RSI' ? 'rsi' : 'sma';
-          indicatorValues[ind] = getLatestIndicatorValue(indicatorResults[i], key);
+          const point = getLatestIndicatorPoint(indicatorResults[i], key);
+          indicatorPoints[ind] = point;
+          if (!alertTimestamp && point.timestamp) {
+            alertTimestamp = point.timestamp;
+          }
         });
+
+        const indicatorValues = Object.fromEntries(
+            Object.entries(indicatorPoints).map(([key, point]) => [key, point.value])
+        );
 
         if (strategy.conditions.every(cond => evaluateCondition(currentPrice, indicatorValues, cond))) {
           console.log(`  ✅ Conditions met for ${symbol}. Creating alert...`);
           const { error: alertError } = await supabase.from("alerts").insert({
             user_id: strategy.user_id, strategy_id: strategy.id, strategy_name: strategy.name,
-            symbol, price: currentPrice, type: "Signal Triggered",
+            symbol, price: currentPrice, type: "Signal Triggered", data_timestamp: alertTimestamp,
           });
           if (alertError) console.error(`  Failed to insert alert:`, alertError);
           else {
             console.log(`  Successfully inserted alert for ${symbol}.`);
-            // Check for and send Telegram alert
             const { data: settings } = await supabase.from('user_settings')
               .select('telegram_bot_token, telegram_chat_id, telegram_alerts_enabled')
               .eq('user_id', strategy.user_id).single();

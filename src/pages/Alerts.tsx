@@ -25,7 +25,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import { Skeleton } from "@/components/ui/skeleton";
-import { formatDistanceToNow } from 'date-fns';
+import { format, formatDistanceToNow } from 'date-fns';
 
 // Define the type for an alert
 interface Alert {
@@ -37,6 +37,7 @@ interface Alert {
   type: string | null;
   is_read: boolean;
   created_at: string;
+  data_timestamp: string | null;
 }
 
 const Alerts = () => {
@@ -240,6 +241,9 @@ const Alerts = () => {
                       </div>
                       <div className="text-sm text-muted-foreground">
                         {formatDistanceToNow(new Date(alert.created_at), { addSuffix: true })} • ${alert.price}
+                        {alert.data_timestamp && (
+                          <span className="italic"> (Data: {format(new Date(alert.data_timestamp), 'MMM d, h:mm:ss a')})</span>
+                        )}
                       </div>
                     </div>
                   </div>
