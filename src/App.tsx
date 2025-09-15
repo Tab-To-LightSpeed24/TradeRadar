@@ -10,6 +10,7 @@ import Strategies from "./pages/Strategies";
 import Alerts from "./pages/Alerts";
 import Journal from "./pages/Journal";
 import Settings from "./pages/Settings";
+import Chatbot from "./pages/Chatbot"; // Import the new Chatbot page
 import NotFound from "./pages/NotFound";
 import { useState, useEffect } from "react";
 import Sidebar from "./components/Sidebar";
@@ -70,6 +71,7 @@ const App = () => {
                     <Route path="/strategies" element={<Strategies />} />
                     <Route path="/alerts" element={<Alerts />} />
                     <Route path="/journal" element={<Journal />} />
+                    <Route path="/assistant" element={<Chatbot />} />
                     <Route path="/settings" element={<Settings />} />
                     {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
                     <Route path="*" element={<NotFound />} />

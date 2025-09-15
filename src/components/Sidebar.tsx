@@ -12,14 +12,15 @@ import {
   X,
   Sun,
   Moon,
-  LogIn, // Import LogIn icon
-  LogOut, // Import LogOut icon
-  UserCircle // Import UserCircle icon
+  LogIn,
+  LogOut,
+  UserCircle,
+  MessageSquare // Import MessageSquare icon
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import { cn } from "@/lib/utils";
 import { Link } from "react-router-dom";
-import { useAuth } from "@/contexts/AuthContext"; // Import useAuth hook
+import { useAuth } from "@/contexts/AuthContext";
 
 const Sidebar = ({ activePage, setActivePage }: { 
   activePage: string; 
@@ -27,13 +28,14 @@ const Sidebar = ({ activePage, setActivePage }: {
 }) => {
   const { theme, setTheme } = useTheme();
   const [isOpen, setIsOpen] = useState(false);
-  const { user, loading, signInWithGoogle, signOut } = useAuth(); // Use the auth hook
+  const { user, loading, signInWithGoogle, signOut } = useAuth();
 
   const navItems = [
     { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, path: "/dashboard" },
     { id: "strategies", label: "Strategies", icon: BarChart3, path: "/strategies" },
     { id: "alerts", label: "Alerts", icon: Bell, path: "/alerts" },
     { id: "journal", label: "Trade Journal", icon: BookOpen, path: "/journal" },
+    { id: "assistant", label: "Assistant", icon: MessageSquare, path: "/assistant" },
     { id: "settings", label: "Settings", icon: Settings, path: "/settings" },
   ];
 
