@@ -34,28 +34,41 @@ function parseStrategyCommand(command: string) {
   };
 
   // Extract name
-  const nameMatch = command.match(/(?:called|named|name it) ['"]?([^'"]+)['"]?/i);
-  strategy.name = nameMatch ? nameMatch[1] : `My AI Strategy ${new Date().toLocaleTimeString()}`;
+  const nameMatch = command.match(/(?:name it|named|called) ['"]?([^'"]+)['"]?/i);
+  strategy.name = nameMatch ? nameMatch[1].trim() : `My AI Strategy ${new Date().toLocaleTimeString()}`;
 
-  // Extract symbols
-  const symbolMatch = command.match(/for (?:symbol[s]?)?([A-Z0-9,\s/]+)/i);
+  // Extract symbols - non-greedy match up to the next keyword
+  const symbolMatch = command.match(/for (?:symbol[s]?)?([A-Z0-9/,\s]+?)(?: on | when | name |,|$/i);
   if (symbolMatch) {
     strategy.symbols = symbolMatch[1].split(',').map(s => s.trim()).filter(Boolean);
   }
 
   // Extract timeframe
-  const timeframeMatch = command.match(/on (?:a |the )?(\d+(?:m|h|d))/i);
-  strategy.timeframe = timeframeMatch ? timeframeMatch[1] : '15m';
+  const timeframeMatch = command.match(/on (?:a |the )?(\d+(?:m|h|d|hr))/i);
+  if (timeframeMatch) {
+      strategy.timeframe = timeframeMatch[1].replace('hr', 'h');
+  } else {
+      strategy.timeframe = '15m';
+  }
 
-  // Extract conditions
-  const conditionRegex = /when (?:the )?(Price|RSI|SMA50|SMA200)\s+(is greater than|is above|greater than|>|is less than|is below|less than|<|crosses above|crosses below)\s+(?:the )?(\d+|Price|RSI|SMA50|SMA200)/gi;
-  let match;
-  while ((match = conditionRegex.exec(command)) !== null) {
-    strategy.conditions.push({
-      indicator: match[1],
-      operator: normalizeOperator(match[2]),
-      value: match[3],
-    });
+  // Extract conditions by splitting on "and" or ","
+  const conditionsMatch = command.match(/when (.*)/i);
+  if (conditionsMatch) {
+    const conditionsString = conditionsMatch[1];
+    const conditionParts = conditionsString.split(/, and |, | and |,/i);
+
+    const conditionPattern = /^\s*(?:the )?(Price|RSI|SMA50|SMA200)\s*(is greater than|is above|greater than|>|is less than|is below|less than|<|crosses above|crosses below)\s*(?:the )?(\d+|Price|RSI|SMA50|SMA200)\s*$/i;
+
+    for (const part of conditionParts) {
+      const match = part.trim().match(conditionPattern);
+      if (match) {
+        strategy.conditions.push({
+          indicator: match[1],
+          operator: normalizeOperator(match[2]),
+          value: match[3],
+        });
+      }
+    }
   }
 
   // Validation
@@ -98,15 +111,15 @@ serve(async (req) => {
     const { data: { user }, error: userError } = await supabase.auth.getUser();
     if (userError || !user) throw new Error("Authentication failed.");
 
-    const parseResult = parseStrategyCommand(userMessage);
+    const { strategy, error } = parseStrategyCommand(userMessage);
 
-    if (parseResult.error) {
-      return new Response(JSON.stringify({ reply: parseResult.error, success: false }), {
+    if (error) {
+      return new Response(JSON.stringify({ reply: error, success: false }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const result = await create_strategy(supabase, user.id, parseResult.strategy);
+    const result = await create_strategy(supabase, user.id, strategy);
 
     return new Response(JSON.stringify({ reply: result, success: true }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
