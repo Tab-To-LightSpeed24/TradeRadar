@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import OpenAI from "https://esm.sh/openai@4.52.7";
+import { ChatCompletionMessageParam } from "https://esm.sh/openai@4.52.7/resources/chat/completions";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -12,15 +13,15 @@ const openai = new OpenAI({
 });
 
 const SYSTEM_PROMPT = `
-You are TradeRadar Assistant, a friendly and helpful AI that helps users create trading strategies.
+You are TradeRadar Assistant, an expert AI that helps users with their trading strategies.
 
-Your primary function is to assist users in creating new trading strategies by calling the \`create_strategy\` tool.
+Your capabilities include:
+1.  **Creating new strategies**: Use the \`create_strategy\` tool when a user asks to create a new trading strategy.
+2.  **Answering questions about existing data**: Use the \`get_strategies\`, \`get_alerts\`, and \`get_journal_summary\` tools to answer user questions about their current setup and performance.
 
-- You must infer all the parameters for the \`create_strategy\` tool from the user's prompt.
-- If the user does not provide a name, create a descriptive name for the strategy.
-- If any required information for a condition (like a symbol or a clear condition) is missing, you MUST ask clarifying questions. Do not guess.
-- For a successful strategy creation, confirm the action by saying you've created it and mentioning the name and timeframe.
-- For all other questions, provide helpful and concise answers about trading, strategies, or using the TradeRadar app.
+- When creating a strategy, if any required information is missing, you MUST ask clarifying questions. Do not guess.
+- When answering questions, provide concise, helpful summaries based on the data returned by the tools.
+- For all other general questions, provide helpful answers about trading or using the TradeRadar app.
 `;
 
 const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
@@ -53,12 +54,76 @@ const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "get_strategies",
+      description: "Get a list of the user's trading strategies and their current status.",
+      parameters: { type: "object", properties: {} },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_alerts",
+      description: "Get the most recent trading alerts for the user.",
+      parameters: {
+        type: "object",
+        properties: {
+          limit: { type: "number", description: "The number of recent alerts to fetch. Defaults to 5." },
+        },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_journal_summary",
+      description: "Get a summary of the user's trading performance from their journal.",
+      parameters: { type: "object", properties: {} },
+    },
+  },
 ];
 
+// --- Tool Implementation ---
+
+async function get_strategies(supabase: SupabaseClient, userId: string) {
+  const { data, error } = await supabase.from('strategies').select('name, status, symbols').eq('user_id', userId);
+  if (error) throw new Error(error.message);
+  return data;
+}
+
+async function get_alerts(supabase: SupabaseClient, userId: string, args: { limit?: number }) {
+  const limit = args.limit || 5;
+  const { data, error } = await supabase.from('alerts').select('strategy_name, symbol, created_at').eq('user_id', userId).order('created_at', { ascending: false }).limit(limit);
+  if (error) throw new Error(error.message);
+  return data;
+}
+
+async function get_journal_summary(supabase: SupabaseClient, userId: string) {
+  const { data, error } = await supabase.from('trades').select('pnl').eq('user_id', userId);
+  if (error) throw new Error(error.message);
+  
+  const totalTrades = data.length;
+  if (totalTrades === 0) return { total_pnl: 0, win_rate: 0, total_trades: 0 };
+
+  const winningTrades = data.filter(t => (t.pnl || 0) > 0).length;
+  const totalPnl = data.reduce((sum, trade) => sum + (trade.pnl || 0), 0);
+  const winRate = Math.round((winningTrades / totalTrades) * 100);
+
+  return { total_pnl: totalPnl, win_rate: winRate, total_trades: totalTrades };
+}
+
+async function create_strategy(supabase: SupabaseClient, userId: string, args: any) {
+  const { error } = await supabase.from('strategies').insert({ ...args, user_id: userId, status: 'stopped' });
+  if (error) throw new Error(error.message);
+  return `Successfully created the "${args.name}" strategy.`;
+}
+
+// --- Main Server Logic ---
+
 serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders });
-  }
+  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
   try {
     const { messages } = await req.json();
@@ -72,36 +137,57 @@ serve(async (req) => {
       Deno.env.get("SUPABASE_ANON_KEY")!,
       { global: { headers: { Authorization: authHeader } } }
     );
-
     const { data: { user }, error: userError } = await supabase.auth.getUser();
     if (userError || !user) throw new Error("Authentication failed.");
 
-    const completion = await openai.chat.completions.create({
+    const initialMessages: ChatCompletionMessageParam[] = [{ role: "system", content: SYSTEM_PROMPT }, ...messages];
+    
+    const response = await openai.chat.completions.create({
       model: "gpt-3.5-turbo",
-      messages: [{ role: "system", content: SYSTEM_PROMPT }, ...messages],
+      messages: initialMessages,
       tools: tools,
       tool_choice: "auto",
     });
 
-    const responseMessage = completion.choices[0].message;
+    const responseMessage = response.choices[0].message;
     const toolCalls = responseMessage.tool_calls;
 
     if (toolCalls) {
-      const toolCall = toolCalls[0];
-      const functionArgs = JSON.parse(toolCall.function.arguments);
-      
-      const { error: insertError } = await supabase.from('strategies').insert({
-        ...functionArgs,
-        user_id: user.id,
-        status: 'stopped',
+      const availableFunctions: { [key: string]: Function } = {
+        create_strategy,
+        get_strategies,
+        get_alerts,
+        get_journal_summary,
+      };
+
+      initialMessages.push(responseMessage); // Add the assistant's tool request
+
+      for (const toolCall of toolCalls) {
+        const functionName = toolCall.function.name;
+        const functionToCall = availableFunctions[functionName];
+        const functionArgs = JSON.parse(toolCall.function.arguments);
+        const functionResponse = await functionToCall(supabase, user.id, functionArgs);
+        
+        initialMessages.push({
+          tool_call_id: toolCall.id,
+          role: "tool",
+          name: functionName,
+          content: JSON.stringify(functionResponse),
+        });
+      }
+
+      const secondResponse = await openai.chat.completions.create({
+        model: "gpt-3.5-turbo",
+        messages: initialMessages,
       });
 
-      if (insertError) throw new Error(`Database error: ${insertError.message}`);
+      const finalMessage = secondResponse.choices[0].message.content;
+      const success = toolCalls.some(call => call.function.name === 'create_strategy');
 
-      const reply = `I've created the "${functionArgs.name}" strategy for you on the ${functionArgs.timeframe} timeframe! You can view and activate it on the Strategies page.`;
-      return new Response(JSON.stringify({ reply, success: true }), {
+      return new Response(JSON.stringify({ reply: finalMessage, success }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
+
     } else {
       return new Response(JSON.stringify({ reply: responseMessage.content, success: false }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
