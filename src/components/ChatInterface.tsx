@@ -15,7 +15,7 @@ import { toast } from "sonner";
 interface Message {
   role: "user" | "assistant";
   content: string;
-  hasAction?: boolean; // Use a serializable flag instead of a ReactNode
+  hasAction?: boolean;
 }
 
 const CHAT_HISTORY_KEY = 'traderadar-chat-history';
@@ -33,7 +33,7 @@ export const ChatInterface = () => {
     return [
       {
         role: "assistant",
-        content: "Hello! I am the TradeRadar Assistant. I can now understand more detailed commands, including timeframe, name, and description. My memory has also been upgraded, so your chat history will be saved.\n\nTry telling me: 'Create a strategy for TSLA on the 15m timeframe, name it \"Tesla Scalper\", when the RSI is below 25'",
+        content: "Hello! I'm the new TradeRadar AI Assistant, powered by OpenAI. I can now understand much more complex requests.\n\nTry something like: 'Create a 15-minute strategy for NVDA called \"NVDA Scalper\" that triggers when the RSI is below 25.'",
       },
     ];
   });
@@ -44,7 +44,9 @@ export const ChatInterface = () => {
 
   useEffect(() => {
     try {
-      localStorage.setItem(CHAT_HISTORY_KEY, JSON.stringify(messages));
+      // Filter out non-serializable properties before saving
+      const serializableMessages = messages.map(({ role, content, hasAction }) => ({ role, content, hasAction }));
+      localStorage.setItem(CHAT_HISTORY_KEY, JSON.stringify(serializableMessages));
     } catch (error) {
       console.error("Failed to save chat history to localStorage", error);
     }
@@ -62,13 +64,17 @@ export const ChatInterface = () => {
     if (!input.trim() || isLoading) return;
 
     const userMessage: Message = { role: "user", content: input };
-    setMessages((prev) => [...prev, userMessage]);
+    const newMessages = [...messages, userMessage];
+    setMessages(newMessages);
     setInput("");
     setIsLoading(true);
 
     try {
-      const { data, error } = await supabase.functions.invoke('chatbot-assistant', {
-        body: { message: input },
+      // Prepare messages for the API (only role and content)
+      const apiMessages = newMessages.map(({ role, content }) => ({ role, content }));
+
+      const { data, error } = await supabase.functions.invoke('openai-assistant', {
+        body: { messages: apiMessages },
       });
 
       if (error) throw error;
@@ -76,12 +82,16 @@ export const ChatInterface = () => {
       const assistantMessage: Message = { 
         role: "assistant", 
         content: data.reply,
-        hasAction: data.success, // Set the flag based on the response
+        hasAction: data.success,
       };
       setMessages((prev) => [...prev, assistantMessage]);
     } catch (error: any) {
-      toast.error(`Error communicating with assistant: ${error.message}`);
-      const errorMessage: Message = { role: "assistant", content: "Sorry, I encountered an error. Please try again." };
+      const errorMessageContent = error.message.includes("OPENAI_API_KEY") 
+        ? "It seems the OpenAI API key is not configured. Please ask the administrator to set it up in the Supabase project secrets."
+        : `Error communicating with assistant: ${error.message}`;
+      
+      toast.error(errorMessageContent);
+      const errorMessage: Message = { role: "assistant", content: "Sorry, I encountered an error. Please check the console or contact support." };
       setMessages((prev) => [...prev, errorMessage]);
     } finally {
       setIsLoading(false);
@@ -93,7 +103,7 @@ export const ChatInterface = () => {
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Bot />
-          TradeRadar Assistant
+          TradeRadar AI Assistant
         </CardTitle>
       </CardHeader>
       <CardContent className="flex-grow flex flex-col gap-4 overflow-hidden">
@@ -121,7 +131,6 @@ export const ChatInterface = () => {
                   )}
                 >
                   <p className="text-sm whitespace-pre-wrap">{message.content}</p>
-                  {/* Render the button conditionally based on the flag */}
                   {message.hasAction && (
                     <div className="mt-2">
                       <Button 
@@ -158,7 +167,7 @@ export const ChatInterface = () => {
           <Input
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="e.g., Create a strategy for GOOGL when RSI is below 20"
+            placeholder="Ask me to create a strategy..."
             disabled={isLoading}
           />
           <Button type="submit" disabled={isLoading}>
