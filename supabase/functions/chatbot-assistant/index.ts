@@ -6,45 +6,62 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-/**
- * A simple parser to extract strategy details from a message.
- * In a real-world scenario, this would be replaced by a call to a powerful LLM.
- */
 function parseStrategyFromMessage(message: string): any | null {
-  const symbolMatch = message.match(/(?:for|on|buy|sell)\s+([A-Z]{1,5})/i);
-  const rsiMatch = message.match(/RSI(?: is)?\s*(<|below|less than)\s*(\d+)/i);
-  const smaMatch = message.match(/SMA(\d+)\s*(crosses above|crosses below|>|<)\s*SMA(\d+)/i);
-
-  if (!symbolMatch) return null;
-
   const strategy: any = {
-    name: "AI Generated Strategy",
+    name: null,
     description: `Generated from prompt: "${message}"`,
-    symbols: [symbolMatch[1].toUpperCase()],
+    symbols: [],
     timeframe: '1h', // Default timeframe
     status: 'stopped',
     conditions: []
   };
 
+  const symbolMatch = message.match(/(?:for|on)\s+([A-Z]{1,5})/i);
+  const nameMatch = message.match(/(?:name it|call it|named|name is)\s*["']([^"']+)["']/i);
+  const descMatch = message.match(/(?:description is|desc is|with the description)\s*["']([^"']+)["']/i);
+  const timeframeMatch = message.match(/(?:on|using|with|for)(?: the)?\s*(\d{1,2}(?:m|h|d)|daily|hourly|1-minute|5-minute|15-minute|4-hour)/i);
+  
+  const rsiMatch = message.match(/RSI(?: is)?\s*(<|below|less than)\s*(\d+)/i);
+  const smaMatch = message.match(/SMA(\d+)\s*(crosses above|crosses below|>|<)\s*SMA(\d+)/i);
+
+  if (symbolMatch) {
+    strategy.symbols.push(symbolMatch[1].toUpperCase());
+  } else {
+    return null; // Symbol is mandatory
+  }
+
+  if (nameMatch) {
+    strategy.name = nameMatch[1];
+  }
+
+  if (descMatch) {
+    strategy.description = descMatch[1];
+  }
+
+  if (timeframeMatch) {
+    const tf = timeframeMatch[1].toLowerCase().replace('-','');
+    const mapping: { [key: string]: string } = {
+      'daily': '1d', 'hourly': '1h', '1minute': '1m', '5minute': '5m', '15minute': '15m', '4hour': '4h'
+    };
+    strategy.timeframe = mapping[tf] || tf;
+  }
+
   if (rsiMatch) {
-    strategy.name = `${symbolMatch[1]} RSI Oversold`;
-    strategy.conditions.push({
-      indicator: 'RSI',
-      operator: '<',
-      value: rsiMatch[2]
-    });
+    strategy.conditions.push({ indicator: 'RSI', operator: '<', value: rsiMatch[2] });
+    if (!strategy.name) strategy.name = `${strategy.symbols[0]} RSI Oversold`;
   }
 
   if (smaMatch) {
-    strategy.name = `${symbolMatch[1]} SMA Crossover`;
     strategy.conditions.push({
       indicator: `SMA${smaMatch[1]}`,
-      operator: smaMatch[2].replace(/\s/g, '_'), // "crosses above" -> "crosses_above"
+      operator: smaMatch[2].replace(/\s/g, '_'),
       value: `SMA${smaMatch[3]}`
     });
+    if (!strategy.name) strategy.name = `${strategy.symbols[0]} SMA Crossover`;
   }
 
   if (strategy.conditions.length === 0) return null;
+  if (!strategy.name) strategy.name = `${strategy.symbols[0]} AI Strategy`;
 
   return strategy;
 }
@@ -58,45 +75,34 @@ serve(async (req) => {
     const { message } = await req.json();
     
     const authHeader = req.headers.get('Authorization');
-    if (!authHeader) {
-      throw new Error("Missing authorization header. Please ensure you are logged in.");
-    }
+    if (!authHeader) throw new Error("Missing authorization header.");
 
-    // Create a Supabase client with the user's authentication token
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_ANON_KEY")!,
       { global: { headers: { Authorization: authHeader } } }
     );
 
-    // Get the user making the request
     const { data: { user }, error: userError } = await supabase.auth.getUser();
-    if (userError || !user) {
-      throw new Error("Authentication failed: " + (userError?.message || "User not found."));
-    }
+    if (userError || !user) throw new Error("Authentication failed.");
 
-    // Attempt to parse a strategy from the user's message
     const strategyData = parseStrategyFromMessage(message);
 
     if (strategyData) {
-      // A strategy was successfully parsed, so save it to the database
       const { error: insertError } = await supabase.from('strategies').insert({
         ...strategyData,
         user_id: user.id,
       });
 
-      if (insertError) {
-        throw new Error(`Database error: ${insertError.message}`);
-      }
+      if (insertError) throw new Error(`Database error: ${insertError.message}`);
 
-      const reply = `I've created the "${strategyData.name}" strategy for you! You can view and activate it on the Strategies page.`;
+      const reply = `I've created the "${strategyData.name}" strategy for you on the ${strategyData.timeframe} timeframe! You can view and activate it on the Strategies page.`;
       return new Response(JSON.stringify({ reply, success: true }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
 
     } else {
-      // No strategy was detected, return a helpful default message
-      const reply = "I'm sorry, I couldn't understand that as a strategy. I can currently create strategies based on RSI or SMA crossovers. For example, try: 'Create a strategy for TSLA when the RSI is below 25'.";
+      const reply = "I'm sorry, I couldn't understand that as a complete strategy. Please make sure to include a stock symbol (e.g., 'for AAPL') and at least one condition (e.g., 'when RSI is below 30').";
       return new Response(JSON.stringify({ reply, success: false }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });

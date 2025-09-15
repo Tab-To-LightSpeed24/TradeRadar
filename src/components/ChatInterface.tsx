@@ -18,19 +18,37 @@ interface Message {
   actions?: React.ReactNode;
 }
 
+const CHAT_HISTORY_KEY = 'traderadar-chat-history';
+
 export const ChatInterface = () => {
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      role: "assistant",
-      content: "Hello! I am the TradeRadar Assistant. How can I help you create a trading strategy today? \n\nTry telling me: 'Create a strategy for AAPL when RSI is below 30'",
-    },
-  ]);
+  const [messages, setMessages] = useState<Message[]>(() => {
+    try {
+      const savedHistory = localStorage.getItem(CHAT_HISTORY_KEY);
+      if (savedHistory) {
+        return JSON.parse(savedHistory);
+      }
+    } catch (error) {
+      console.error("Failed to parse chat history from localStorage", error);
+    }
+    return [
+      {
+        role: "assistant",
+        content: "Hello! I am the TradeRadar Assistant. I can now understand more detailed commands, including timeframe, name, and description. My memory has also been upgraded, so your chat history will be saved.\n\nTry telling me: 'Create a strategy for TSLA on the 15m timeframe, name it \"Tesla Scalper\", when the RSI is below 25'",
+      },
+    ];
+  });
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
 
   useEffect(() => {
+    try {
+      localStorage.setItem(CHAT_HISTORY_KEY, JSON.stringify(messages));
+    } catch (error) {
+      console.error("Failed to save chat history to localStorage", error);
+    }
+
     if (scrollAreaRef.current) {
       scrollAreaRef.current.scrollTo({
         top: scrollAreaRef.current.scrollHeight,
