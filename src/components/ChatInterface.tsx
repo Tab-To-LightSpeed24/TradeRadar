@@ -1,12 +1,13 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Send, Bot, User, Loader2 } from "lucide-react";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Send, Bot, User, Loader2, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
@@ -14,21 +15,22 @@ import { toast } from "sonner";
 interface Message {
   role: "user" | "assistant";
   content: string;
+  actions?: React.ReactNode;
 }
 
 export const ChatInterface = () => {
   const [messages, setMessages] = useState<Message[]>([
     {
       role: "assistant",
-      content: "Hello! I am the TradeRadar Assistant. How can I help you create a trading strategy today?",
+      content: "Hello! I am the TradeRadar Assistant. How can I help you create a trading strategy today? \n\nTry telling me: 'Create a strategy for AAPL when RSI is below 30'",
     },
   ]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
+  const navigate = useNavigate();
 
   useEffect(() => {
-    // Auto-scroll to the bottom when new messages are added
     if (scrollAreaRef.current) {
       scrollAreaRef.current.scrollTo({
         top: scrollAreaRef.current.scrollHeight,
@@ -39,7 +41,7 @@ export const ChatInterface = () => {
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!input.trim()) return;
+    if (!input.trim() || isLoading) return;
 
     const userMessage: Message = { role: "user", content: input };
     setMessages((prev) => [...prev, userMessage]);
@@ -53,7 +55,21 @@ export const ChatInterface = () => {
 
       if (error) throw error;
 
-      const assistantMessage: Message = { role: "assistant", content: data.reply };
+      const assistantMessage: Message = { 
+        role: "assistant", 
+        content: data.reply,
+        actions: data.success ? (
+          <Button 
+            variant="outline" 
+            size="sm" 
+            className="mt-2"
+            onClick={() => navigate('/strategies')}
+          >
+            <Sparkles className="w-4 h-4 mr-2" />
+            View Strategies
+          </Button>
+        ) : undefined,
+      };
       setMessages((prev) => [...prev, assistantMessage]);
     } catch (error: any) {
       toast.error(`Error communicating with assistant: ${error.message}`);
@@ -97,6 +113,7 @@ export const ChatInterface = () => {
                   )}
                 >
                   <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+                  {message.actions && <div className="mt-2">{message.actions}</div>}
                 </div>
                 {message.role === "user" && (
                   <Avatar className="h-8 w-8">
@@ -121,7 +138,7 @@ export const ChatInterface = () => {
           <Input
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="Describe the trading strategy you want to create..."
+            placeholder="e.g., Create a strategy for GOOGL when RSI is below 20"
             disabled={isLoading}
           />
           <Button type="submit" disabled={isLoading}>
