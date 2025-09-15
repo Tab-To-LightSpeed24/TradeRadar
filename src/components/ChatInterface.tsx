@@ -49,7 +49,7 @@ export const ChatInterface = () => {
         return [initialMessage];
       }
       
-      return savedHistory.messages;
+      return savedHistory.messages || [initialMessage];
     } catch (error) {
       console.error("Failed to parse chat history from localStorage", error);
       return [initialMessage];
@@ -182,7 +182,7 @@ export const ChatInterface = () => {
         </div>
         <ScrollArea className="flex-grow pr-4">
           <div className="space-y-4">
-            {messages.map((message, index) => (
+            {messages && messages.map((message, index) => (
               <div
                 key={index}
                 className={cn(
@@ -245,7 +245,7 @@ export const ChatInterface = () => {
         
         {messages.length <= 2 && !isLoading && (
           <div className="flex flex-wrap gap-2 pt-2 border-t">
-            {suggestionPrompts.map((prompt, i) => (
+            {suggestionPrompts && suggestionPrompts.map((prompt, i) => (
               <Button key={i} variant="outline" size="sm" onClick={() => sendMessage(prompt)}>
                 {prompt}
               </Button>
