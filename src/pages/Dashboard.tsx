@@ -3,16 +3,15 @@
 import { useState, useEffect, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { 
   Play, 
   Pause, 
   TrendingUp, 
   BarChart3,
   Bell,
-  Settings,
   ArrowRight,
-  Percent
+  Percent,
+  Plus
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/lib/supabase";
@@ -20,8 +19,9 @@ import { toast } from "sonner";
 import { Skeleton } from "@/components/ui/skeleton";
 import { format, parseISO, formatDistanceToNow } from 'date-fns';
 import { PnLChart } from "@/components/PnLChart";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { StatCard } from "@/components/StatCard";
+import { MarketStatus } from "@/components/MarketStatus";
 
 interface Strategy {
   id: string;
@@ -43,6 +43,7 @@ interface PnLDataPoint {
 
 const Dashboard = () => {
   const { user, loading: authLoading } = useAuth();
+  const navigate = useNavigate();
   const [strategies, setStrategies] = useState<Strategy[]>([]);
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [loading, setLoading] = useState(true);
@@ -149,12 +150,21 @@ const Dashboard = () => {
     );
   }
 
+  const userName = user.user_metadata?.full_name?.split(' ')[0] || user.email;
+
   return (
     <div className="container mx-auto py-8">
-      <div className="flex justify-between items-center mb-8">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8 gap-4">
         <div>
-          <h1 className="text-3xl font-bold">Welcome Back!</h1>
+          <h1 className="text-3xl font-bold">Welcome Back, {userName}!</h1>
           <p className="text-muted-foreground">Here's a snapshot of your trading activity.</p>
+        </div>
+        <div className="flex items-center gap-4">
+          <MarketStatus />
+          <Button onClick={() => navigate('/strategies')}>
+            <Plus className="w-4 h-4 mr-2" />
+            New Strategy
+          </Button>
         </div>
       </div>
 
