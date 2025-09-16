@@ -228,7 +228,7 @@ export const StrategyEditor = ({ isOpen, onClose, onSave, strategy }: StrategyEd
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button onClick={handleSaveClick}>Save Strategy</_Button>
+          <Button onClick={handleSaveClick}>Save Strategy</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
