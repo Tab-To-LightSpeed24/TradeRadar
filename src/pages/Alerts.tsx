@@ -8,10 +8,9 @@ import {
   Bell,
   BellOff,
   Check,
-  Filter,
   Download,
-  Eye,
-  Loader2
+  Loader2,
+  CheckCheck
 } from "lucide-react";
 import {
   Select,
@@ -27,6 +26,7 @@ import { toast } from "sonner";
 import { Skeleton } from "@/components/ui/skeleton";
 import { format, formatDistanceToNow } from 'date-fns';
 import Papa from "papaparse";
+import { useNavigate } from "react-router-dom";
 
 // Define the type for an alert
 interface Alert {
@@ -43,6 +43,7 @@ interface Alert {
 
 const Alerts = () => {
   const { user, loading: authLoading } = useAuth();
+  const navigate = useNavigate();
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("all");
@@ -177,7 +178,7 @@ const Alerts = () => {
         <h1 className="text-3xl font-bold">Alert Center</h1>
         <div className="flex gap-2">
           <Button variant="outline" onClick={markAllAsRead}>
-            <Check className="w-4 h-4 mr-2" />
+            <CheckCheck className="w-4 h-4 mr-2" />
             Mark All Read
           </Button>
           <Button variant="outline" onClick={handleExport}>
@@ -241,7 +242,7 @@ const Alerts = () => {
         </Card>
       </div>
 
-      {/* Alerts Table */}
+      {/* Alerts List */}
       <Card>
         <CardHeader>
           <CardTitle>Recent Alerts</CardTitle>
@@ -257,47 +258,51 @@ const Alerts = () => {
               ))
             ) : filteredAlerts.length > 0 ? (
               filteredAlerts.map((alert) => (
-                <div key={alert.id} className={`p-4 flex items-center justify-between ${!alert.is_read ? 'bg-blue-50 dark:bg-blue-950/20' : ''}`}>
+                <div key={alert.id} className={`p-4 flex items-center justify-between transition-colors ${!alert.is_read ? 'bg-blue-50 dark:bg-blue-950/20 hover:bg-blue-100 dark:hover:bg-blue-950/30' : 'hover:bg-muted/50'}`}>
                   <div className="flex items-center gap-4">
-                    {!alert.is_read && (
-                      <div className="w-2 h-2 rounded-full bg-blue-500"></div>
-                    )}
+                    <div className={`p-2 rounded-full ${alert.type?.includes("Buy") ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>
+                      <Bell className="w-5 h-5" />
+                    </div>
                     <div>
                       <div className="font-medium flex items-center gap-2">
                         {alert.strategy_name}
                         <Badge variant="secondary">{alert.symbol}</Badge>
                       </div>
                       <div className="text-sm text-muted-foreground">
-                        {formatDistanceToNow(new Date(alert.created_at), { addSuffix: true })} • ${alert.price}
+                        <span>{formatDistanceToNow(new Date(alert.created_at), { addSuffix: true })}</span>
+                        <span className="mx-1">•</span>
+                        <span>${alert.price}</span>
                         {alert.data_timestamp && (
-                          <span className="italic"> (Data: {format(new Date(alert.data_timestamp), 'MMM d, h:mm:ss a')})</span>
+                          <span className="italic"> (Data: {format(new Date(alert.data_timestamp), 'MMM d, h:mm a')})</span>
                         )}
                       </div>
                     </div>
                   </div>
-                  <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-2">
                     <Badge variant={alert.type?.includes("Buy") ? "default" : "destructive"}>
                       {alert.type}
                     </Badge>
-                    <div className="flex items-center gap-2">
+                    {!alert.is_read && (
                       <Button 
-                        variant="ghost" 
+                        variant="outline" 
                         size="sm" 
                         onClick={() => markAsRead(alert.id)}
-                        disabled={alert.is_read}
                       >
-                        <Check className="w-4 h-4" />
+                        <Check className="w-4 h-4 mr-2" />
+                        Mark as Read
                       </Button>
-                      <Button variant="ghost" size="sm">
-                        <Eye className="w-4 h-4" />
-                      </Button>
-                    </div>
+                    )}
                   </div>
                 </div>
               ))
             ) : (
               <div className="p-8 text-center text-muted-foreground">
-                No alerts found matching your criteria
+                <Bell className="w-12 h-12 mx-auto mb-4 text-gray-400" />
+                <h3 className="text-lg font-semibold">No Alerts Yet</h3>
+                <p>Your triggered alerts will appear here once a strategy's conditions are met.</p>
+                <Button variant="secondary" className="mt-4" onClick={() => navigate('/strategies')}>
+                  Create a Strategy
+                </Button>
               </div>
             )}
           </div>
