@@ -1,0 +1,1 @@
+SELECT cron.unschedule('invoke-strategy-engine-every-5-minutes');
