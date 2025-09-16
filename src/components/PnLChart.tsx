@@ -2,6 +2,7 @@
 
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { TrendingUp } from 'lucide-react';
 
 interface PnLChartProps {
   data: {
@@ -18,8 +19,10 @@ export const PnLChart = ({ data }: PnLChartProps) => {
           <CardTitle>P&L Over Time</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="h-80 flex items-center justify-center text-muted-foreground">
-            Not enough trade data to display chart.
+          <div className="h-80 flex flex-col items-center justify-center text-center text-muted-foreground">
+            <TrendingUp className="w-12 h-12 mb-4" />
+            <h3 className="text-lg font-semibold">No Trade Data Available</h3>
+            <p className="text-sm">Your P&L chart will appear here once you log some trades in your journal.</p>
           </div>
         </CardContent>
       </Card>
