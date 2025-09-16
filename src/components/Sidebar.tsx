@@ -14,8 +14,7 @@ import {
   Moon,
   LogIn,
   LogOut,
-  UserCircle,
-  MessageSquare // Import MessageSquare icon
+  UserCircle
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import { cn } from "@/lib/utils";
@@ -35,7 +34,6 @@ const Sidebar = ({ activePage, setActivePage }: {
     { id: "strategies", label: "Strategies", icon: BarChart3, path: "/strategies" },
     { id: "alerts", label: "Alerts", icon: Bell, path: "/alerts" },
     { id: "journal", label: "Trade Journal", icon: BookOpen, path: "/journal" },
-    { id: "assistant", label: "Assistant", icon: MessageSquare, path: "/assistant" },
     { id: "settings", label: "Settings", icon: Settings, path: "/settings" },
   ];
 
