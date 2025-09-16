@@ -146,12 +146,16 @@ async function sendTelegramAlert(
 
 // --- Main Server Logic ---
 serve(async (req) => {
+  // Added this log for debugging
+  console.log(`Strategy engine function invoked at: ${new Date().toISOString()}`);
+
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
   // Security: Check for the service role key in the Authorization header
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   const authHeader = req.headers.get('Authorization');
   if (!serviceRoleKey || authHeader !== `Bearer ${serviceRoleKey}`) {
+    console.error("Unauthorized attempt to run strategy engine.");
     return new Response(JSON.stringify({ error: "Unauthorized." }), { 
       status: 401, 
       headers: { ...corsHeaders, "Content-Type": "application/json" } 
@@ -159,7 +163,7 @@ serve(async (req) => {
   }
 
   try {
-    console.log("--- Strategy Engine Invoked ---");
+    console.log("--- Strategy Engine Processing Started ---");
     const supabase = createClient(Deno.env.get("SUPABASE_URL")!, serviceRoleKey);
     const twelveDataApiKey = Deno.env.get("TWELVE_DATA_API_KEY");
     if (!twelveDataApiKey) throw new Error("TWELVE_DATA_API_KEY is not set.");
@@ -167,7 +171,10 @@ serve(async (req) => {
     const { data: strategies, error: stratsError } = await supabase
       .from("strategies").select("*").eq("status", "running");
     if (stratsError) throw stratsError;
-    if (!strategies?.length) return new Response(JSON.stringify({ message: "No active strategies." }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    if (!strategies?.length) {
+      console.log("No active strategies to process.");
+      return new Response(JSON.stringify({ message: "No active strategies." }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
 
     console.log(`Processing ${strategies.length} running strategies.`);
     for (const strategy of strategies) {
