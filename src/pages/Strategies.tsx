@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { 
@@ -12,7 +12,8 @@ import {
   Trash2,
   Plus,
   Loader2,
-  Sparkles
+  Sparkles,
+  BarChart3
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/lib/supabase";
@@ -294,73 +295,81 @@ const Strategies = () => {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {strategies.map((strategy) => (
             <Card key={strategy.id} className="hover:shadow-lg transition-shadow flex flex-col">
-              <CardHeader className="pb-2">
+              <CardHeader>
                 <div className="flex justify-between items-start">
                   <CardTitle className="text-lg">{strategy.name}</CardTitle>
                   <Badge className={`${getStatusColor(strategy.status)} text-white`}>
                     {getStatusText(strategy.status)}
                   </Badge>
                 </div>
-                <p className="text-sm text-muted-foreground h-10 overflow-hidden">{strategy.description}</p>
+                <p className="text-sm text-muted-foreground pt-1">{strategy.description || "No description provided."}</p>
               </CardHeader>
-              <CardContent className="flex-grow flex flex-col justify-between">
+              <CardContent className="flex-grow space-y-4">
                 <div>
-                  <div className="mb-4">
-                    <h4 className="text-sm font-semibold mb-1">Conditions</h4>
-                    {strategy.conditions && strategy.conditions.length > 0 ? (
-                      <div className="text-xs p-2 bg-muted rounded-md space-y-1">
-                        {strategy.conditions.map((cond, index) => (
-                          <div key={index}>
-                            <code>{cond.indicator} {cond.operator} {cond.value}</code>
-                            {index < strategy.conditions.length - 1 && <span className="font-bold"> AND</span>}
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="text-sm text-muted-foreground">No conditions set.</p>
-                    )}
+                  <h4 className="text-sm font-semibold mb-2">Parameters</h4>
+                  <div className="flex items-center text-sm text-muted-foreground mb-2">
+                    Timeframe: <Badge variant="outline" className="ml-2">{strategy.timeframe}</Badge>
                   </div>
-                  <div className="flex flex-wrap gap-1 mb-4 h-6 overflow-hidden">
+                  <div className="flex flex-wrap gap-1">
                     {strategy.symbols.map((symbol, index) => (
                       <Badge key={index} variant="secondary">{symbol}</Badge>
                     ))}
                   </div>
                 </div>
-                
-                <div className="flex justify-end items-center gap-2">
-                  <Button 
-                    size="icon" 
-                    variant="outline" 
-                    onClick={() => toggleStrategy(strategy.id, strategy.status)}
-                  >
-                    {strategy.status === "running" ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
-                  </Button>
-                  <Button 
-                    size="icon" 
-                    variant="outline" 
-                    onClick={() => cloneStrategy(strategy)}
-                  >
-                    <Copy className="w-4 h-4" />
-                  </Button>
-                  <Button size="icon" variant="outline" onClick={() => handleEditStrategy(strategy)}>
-                    <Edit className="w-4 h-4" />
-                  </Button>
-                  <Button 
-                    size="icon" 
-                    variant="destructive" 
-                    onClick={() => deleteStrategy(strategy.id)}
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </Button>
+                <div>
+                  <h4 className="text-sm font-semibold mb-1">Conditions</h4>
+                  {strategy.conditions && strategy.conditions.length > 0 ? (
+                    <div className="text-xs p-2 bg-muted rounded-md space-y-1">
+                      {strategy.conditions.map((cond, index) => (
+                        <div key={index}>
+                          <code>{cond.indicator} {cond.operator} {cond.value}</code>
+                          {index < strategy.conditions.length - 1 && <span className="font-bold"> AND</span>}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">No conditions set.</p>
+                  )}
                 </div>
               </CardContent>
+              <CardFooter className="flex justify-end items-center gap-2 pt-4">
+                <Button 
+                  size="icon" 
+                  variant="outline" 
+                  onClick={() => toggleStrategy(strategy.id, strategy.status)}
+                >
+                  {strategy.status === "running" ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+                </Button>
+                <Button 
+                  size="icon" 
+                  variant="outline" 
+                  onClick={() => cloneStrategy(strategy)}
+                >
+                  <Copy className="w-4 h-4" />
+                </Button>
+                <Button size="icon" variant="outline" onClick={() => handleEditStrategy(strategy)}>
+                  <Edit className="w-4 h-4" />
+                </Button>
+                <Button 
+                  size="icon" 
+                  variant="destructive" 
+                  onClick={() => deleteStrategy(strategy.id)}
+                >
+                  <Trash2 className="w-4 h-4" />
+                </Button>
+              </CardFooter>
             </Card>
           ))}
         </div>
       ) : (
         <div className="text-center py-16 border-2 border-dashed rounded-lg">
+          <BarChart3 className="w-12 h-12 mx-auto mb-4 text-gray-400" />
           <h3 className="text-xl font-semibold">No Strategies Found</h3>
-          <p className="text-muted-foreground mt-2">Create a strategy or start with a template.</p>
+          <p className="text-muted-foreground mt-2">Get started by creating your first strategy or using a template.</p>
+          <Button className="mt-4" onClick={handleNewStrategy}>
+            <Plus className="w-4 h-4 mr-2" />
+            Create Strategy
+          </Button>
         </div>
       )}
     </div>
