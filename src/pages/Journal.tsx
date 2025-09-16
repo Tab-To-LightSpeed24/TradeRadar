@@ -8,12 +8,15 @@ import {
   Plus,
   Download,
   Upload,
-  Filter,
   Edit,
   Trash2,
   Loader2,
   TrendingUp,
-  Target
+  Target,
+  BookOpen,
+  Percent,
+  DollarSign,
+  BarChart
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import {
@@ -197,6 +200,7 @@ const Journal = () => {
         winningTrades: 0,
         winRate: 0,
         totalPnL: 0,
+        avgPnl: 0,
         bestStrategy: { name: "N/A", pnl: 0 },
         bestSymbol: { name: "N/A", pnl: 0 },
       };
@@ -206,6 +210,7 @@ const Journal = () => {
     const winningTrades = trades.filter(t => (t.pnl || 0) > 0).length;
     const winRate = totalTrades > 0 ? Math.round((winningTrades / totalTrades) * 100) : 0;
     const totalPnL = trades.reduce((sum, trade) => sum + (trade.pnl || 0), 0);
+    const avgPnl = totalTrades > 0 ? totalPnL / totalTrades : 0;
 
     const strategyPnl = trades.reduce((acc, trade) => {
       const strategyName = trade.strategy || "Uncategorized";
@@ -227,6 +232,7 @@ const Journal = () => {
       winningTrades,
       winRate,
       totalPnL,
+      avgPnl,
       bestStrategy: { name: bestStrategyName, pnl: strategyPnl[bestStrategyName] || 0 },
       bestSymbol: { name: bestSymbolName, pnl: symbolPnl[bestSymbolName] || 0 },
     };
@@ -280,7 +286,6 @@ const Journal = () => {
       complete: async (results) => {
         try {
           const tradesToImport = results.data.map((row: any) => {
-            // Basic validation
             if (!row['Symbol'] || !row['Entry Time']) return null;
             return {
               user_id: user.id,
@@ -294,7 +299,7 @@ const Journal = () => {
               strategy: row['Strategy'] || null,
               notes: row['Notes'] || null,
             };
-          }).filter(Boolean); // Remove null entries
+          }).filter(Boolean);
 
           if (tradesToImport.length === 0) {
             toast.warning("No valid trades found in the file to import.");
@@ -310,7 +315,6 @@ const Journal = () => {
           toast.error(`Import failed: ${error.message}`);
         } finally {
           toast.dismiss(loadingToast);
-          // Reset file input
           if (event.target) event.target.value = '';
         }
       },
@@ -355,47 +359,17 @@ const Journal = () => {
                 <DialogTitle>{editingTrade ? "Edit Trade" : "Log New Trade"}</DialogTitle>
               </DialogHeader>
               <div className="grid gap-4 py-4">
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="symbol" className="text-right">Symbol</Label>
-                  <Input id="symbol" value={formData.symbol} onChange={handleInputChange} className="col-span-3" />
-                </div>
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="entry_time" className="text-right">Entry Time</Label>
-                  <Input id="entry_time" type="datetime-local" value={formData.entry_time} onChange={handleInputChange} className="col-span-3" />
-                </div>
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="exit_time" className="text-right">Exit Time</Label>
-                  <Input id="exit_time" type="datetime-local" value={formData.exit_time} onChange={handleInputChange} className="col-span-3" />
-                </div>
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="entry_price" className="text-right">Entry Price</Label>
-                  <Input id="entry_price" type="number" value={formData.entry_price} onChange={handleInputChange} className="col-span-3" />
-                </div>
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="exit_price" className="text-right">Exit Price</Label>
-                  <Input id="exit_price" type="number" value={formData.exit_price} onChange={handleInputChange} className="col-span-3" />
-                </div>
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="size" className="text-right">Size</Label>
-                  <Input id="size" type="number" value={formData.size} onChange={handleInputChange} className="col-span-3" />
-                </div>
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="pnl" className="text-right">P&L</Label>
-                  <Input id="pnl" type="number" value={formData.pnl} onChange={handleInputChange} className="col-span-3" />
-                </div>
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="strategy" className="text-right">Strategy</Label>
-                  <Input id="strategy" value={formData.strategy} onChange={handleInputChange} className="col-span-3" />
-                </div>
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="notes" className="text-right">Notes</Label>
-                  <Textarea id="notes" value={formData.notes} onChange={handleInputChange} className="col-span-3" />
-                </div>
+                <div className="grid grid-cols-4 items-center gap-4"><Label htmlFor="symbol" className="text-right">Symbol</Label><Input id="symbol" value={formData.symbol} onChange={handleInputChange} className="col-span-3" /></div>
+                <div className="grid grid-cols-4 items-center gap-4"><Label htmlFor="entry_time" className="text-right">Entry Time</Label><Input id="entry_time" type="datetime-local" value={formData.entry_time} onChange={handleInputChange} className="col-span-3" /></div>
+                <div className="grid grid-cols-4 items-center gap-4"><Label htmlFor="exit_time" className="text-right">Exit Time</Label><Input id="exit_time" type="datetime-local" value={formData.exit_time} onChange={handleInputChange} className="col-span-3" /></div>
+                <div className="grid grid-cols-4 items-center gap-4"><Label htmlFor="entry_price" className="text-right">Entry Price</Label><Input id="entry_price" type="number" value={formData.entry_price} onChange={handleInputChange} className="col-span-3" /></div>
+                <div className="grid grid-cols-4 items-center gap-4"><Label htmlFor="exit_price" className="text-right">Exit Price</Label><Input id="exit_price" type="number" value={formData.exit_price} onChange={handleInputChange} className="col-span-3" /></div>
+                <div className="grid grid-cols-4 items-center gap-4"><Label htmlFor="size" className="text-right">Size</Label><Input id="size" type="number" value={formData.size} onChange={handleInputChange} className="col-span-3" /></div>
+                <div className="grid grid-cols-4 items-center gap-4"><Label htmlFor="pnl" className="text-right">P&L</Label><Input id="pnl" type="number" value={formData.pnl} onChange={handleInputChange} className="col-span-3" /></div>
+                <div className="grid grid-cols-4 items-center gap-4"><Label htmlFor="strategy" className="text-right">Strategy</Label><Input id="strategy" value={formData.strategy} onChange={handleInputChange} className="col-span-3" /></div>
+                <div className="grid grid-cols-4 items-center gap-4"><Label htmlFor="notes" className="text-right">Notes</Label><Textarea id="notes" value={formData.notes} onChange={handleInputChange} className="col-span-3" /></div>
               </div>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setIsModalOpen(false)}>Cancel</Button>
-                <Button onClick={handleSaveTrade}>Save Trade</Button>
-              </DialogFooter>
+              <DialogFooter><Button variant="outline" onClick={() => setIsModalOpen(false)}>Cancel</Button><Button onClick={handleSaveTrade}>Save Trade</Button></DialogFooter>
             </DialogContent>
           </Dialog>
           <Button variant="outline" className="flex items-center gap-2" onClick={handleExport}><Download className="w-4 h-4" />Export</Button>
@@ -404,76 +378,67 @@ const Journal = () => {
         </div>
       </div>
 
-      {/* Summary Stats */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
-        <Card><CardHeader><CardTitle>Total Trades</CardTitle></CardHeader><CardContent><p className="text-3xl font-bold">{analytics.totalTrades}</p></CardContent></Card>
-        <Card><CardHeader><CardTitle>Win Rate</CardTitle></CardHeader><CardContent><p className="text-3xl font-bold">{analytics.winRate}%</p></CardContent></Card>
-        <Card><CardHeader><CardTitle>Total P&L</CardTitle></CardHeader><CardContent><p className={`text-3xl font-bold ${analytics.totalPnL >= 0 ? "text-green-500" : "text-red-500"}`}>${analytics.totalPnL.toFixed(2)}</p></CardContent></Card>
-        <Card><CardHeader><CardTitle>Avg. Trade P&L</CardTitle></CardHeader><CardContent><p className={`text-3xl font-bold ${analytics.totalTrades > 0 && (analytics.totalPnL / analytics.totalTrades) >= 0 ? "text-green-500" : "text-red-500"}`}>${(analytics.totalTrades > 0 ? (analytics.totalPnL / analytics.totalTrades).toFixed(2) : "0.00")}</p></CardContent></Card>
-        <Card>
-          <CardHeader><CardTitle className="flex items-center gap-2"><TrendingUp className="w-5 h-5" /> Best Strategy</CardTitle></CardHeader>
-          <CardContent>
-            <p className="text-xl font-bold">{analytics.bestStrategy.name}</p>
-            <p className={`text-lg font-medium ${analytics.bestStrategy.pnl >= 0 ? "text-green-500" : "text-red-500"}`}>${analytics.bestStrategy.pnl.toFixed(2)}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader><CardTitle className="flex items-center gap-2"><Target className="w-5 h-5" /> Best Symbol</CardTitle></CardHeader>
-          <CardContent>
-            <p className="text-xl font-bold">{analytics.bestSymbol.name}</p>
-            <p className={`text-lg font-medium ${analytics.bestSymbol.pnl >= 0 ? "text-green-500" : "text-red-500"}`}>${analytics.bestSymbol.pnl.toFixed(2)}</p>
-          </CardContent>
-        </Card>
+        <Card><CardHeader className="flex flex-row items-center justify-between pb-2"><CardTitle className="text-sm font-medium">Total Trades</CardTitle><BookOpen className="w-4 h-4 text-muted-foreground" /></CardHeader><CardContent><p className="text-2xl font-bold">{analytics.totalTrades}</p></CardContent></Card>
+        <Card><CardHeader className="flex flex-row items-center justify-between pb-2"><CardTitle className="text-sm font-medium">Win Rate</CardTitle><Percent className="w-4 h-4 text-muted-foreground" /></CardHeader><CardContent><p className="text-2xl font-bold">{analytics.winRate}%</p></CardContent></Card>
+        <Card><CardHeader className="flex flex-row items-center justify-between pb-2"><CardTitle className="text-sm font-medium">Total P&L</CardTitle><DollarSign className="w-4 h-4 text-muted-foreground" /></CardHeader><CardContent><p className={`text-2xl font-bold ${analytics.totalPnL >= 0 ? "text-green-500" : "text-red-500"}`}>${analytics.totalPnL.toFixed(2)}</p></CardContent></Card>
+        <Card><CardHeader className="flex flex-row items-center justify-between pb-2"><CardTitle className="text-sm font-medium">Avg. Trade P&L</CardTitle><BarChart className="w-4 h-4 text-muted-foreground" /></CardHeader><CardContent><p className={`text-2xl font-bold ${analytics.avgPnl >= 0 ? "text-green-500" : "text-red-500"}`}>${analytics.avgPnl.toFixed(2)}</p></CardContent></Card>
+        <Card><CardHeader className="flex flex-row items-center justify-between pb-2"><CardTitle className="text-sm font-medium">Best Strategy</CardTitle><TrendingUp className="w-4 h-4 text-muted-foreground" /></CardHeader><CardContent><p className="text-lg font-bold">{analytics.bestStrategy.name}</p><p className={`text-sm font-medium ${analytics.bestStrategy.pnl >= 0 ? "text-green-500" : "text-red-500"}`}>${analytics.bestStrategy.pnl.toFixed(2)}</p></CardContent></Card>
+        <Card><CardHeader className="flex flex-row items-center justify-between pb-2"><CardTitle className="text-sm font-medium">Best Symbol</CardTitle><Target className="w-4 h-4 text-muted-foreground" /></CardHeader><CardContent><p className="text-lg font-bold">{analytics.bestSymbol.name}</p><p className={`text-sm font-medium ${analytics.bestSymbol.pnl >= 0 ? "text-green-500" : "text-red-500"}`}>${analytics.bestSymbol.pnl.toFixed(2)}</p></CardContent></Card>
       </div>
 
-      {/* Controls and Trades Table */}
       <Card>
         <CardHeader>
           <CardTitle>Trade History</CardTitle>
           <div className="pt-4 flex flex-col md:flex-row gap-4">
             <div className="flex-1"><Input placeholder="Search trades..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} /></div>
             <div className="flex gap-2">
-              <Select value={filter} onValueChange={setFilter}>
-                <SelectTrigger className="w-[120px]"><SelectValue placeholder="Filter" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Trades</SelectItem>
-                  <SelectItem value="winners">Winners</SelectItem>
-                  <SelectItem value="losers">Losers</SelectItem>
-                </SelectContent>
-              </Select>
+              <Select value={filter} onValueChange={setFilter}><SelectTrigger className="w-[120px]"><SelectValue placeholder="Filter" /></SelectTrigger><SelectContent><SelectItem value="all">All</SelectItem><SelectItem value="winners">Winners</SelectItem><SelectItem value="losers">Losers</SelectItem></SelectContent></Select>
             </div>
           </div>
         </CardHeader>
         <CardContent className="p-0">
+          <div className="hidden md:grid md:grid-cols-12 p-4 border-b font-medium text-sm text-muted-foreground">
+            <div className="col-span-3">Symbol / Strategy</div>
+            <div className="col-span-3">Entry / Exit Time</div>
+            <div className="col-span-2">Size</div>
+            <div className="col-span-2 text-right">P&L</div>
+            <div className="col-span-2 text-right">Actions</div>
+          </div>
           <div className="divide-y">
             {loading ? (
-              [...Array(3)].map((_, i) => (
-                <div key={i} className="p-4 flex items-center justify-between">
-                  <div className="space-y-2"><Skeleton className="h-5 w-48" /><Skeleton className="h-4 w-64" /></div>
-                  <div className="flex items-center gap-6"><Skeleton className="h-8 w-32" /><Skeleton className="h-8 w-20" /></div>
-                </div>
-              ))
+              [...Array(3)].map((_, i) => (<div key={i} className="p-4"><Skeleton className="h-8 w-full" /></div>))
             ) : filteredTrades.length > 0 ? (
               filteredTrades.map((trade) => (
-                <div key={trade.id} className="p-4 flex items-center justify-between">
-                  <div>
+                <div key={trade.id} className="p-4 grid grid-cols-1 md:grid-cols-12 gap-y-2 items-center">
+                  <div className="md:col-span-3">
                     <div className="font-medium flex items-center gap-2">{trade.symbol}<Badge variant="secondary">{trade.strategy}</Badge></div>
-                    <div className="text-sm text-muted-foreground">{trade.entry_time ? new Date(trade.entry_time).toLocaleString() : ''} → {trade.exit_time ? new Date(trade.exit_time).toLocaleString() : ''}</div>
                   </div>
-                  <div className="flex items-center gap-6">
-                    <div className="text-right">
-                      <div className="font-medium">{trade.size} @ ${trade.entry_price} → ${trade.exit_price}</div>
-                      <div className={`font-medium ${(trade.pnl || 0) >= 0 ? "text-green-500" : "text-red-500"}`}>${(trade.pnl || 0).toFixed(2)}</div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Button variant="ghost" size="sm" onClick={() => handleOpenModal(trade)}><Edit className="w-4 h-4" /></Button>
-                      <Button variant="ghost" size="sm" onClick={() => deleteTrade(trade.id)}><Trash2 className="w-4 h-4" /></Button>
-                    </div>
+                  <div className="md:col-span-3 text-sm text-muted-foreground">
+                    {trade.entry_time ? new Date(trade.entry_time).toLocaleString() : ''} → {trade.exit_time ? new Date(trade.exit_time).toLocaleString() : ''}
+                  </div>
+                  <div className="md:col-span-2 text-sm text-muted-foreground">
+                    <span className="md:hidden font-medium text-foreground">Size: </span>
+                    {trade.size} @ ${trade.entry_price}
+                  </div>
+                  <div className="md:col-span-2 md:text-right">
+                    <div className={`font-medium ${(trade.pnl || 0) >= 0 ? "text-green-500" : "text-red-500"}`}>${(trade.pnl || 0).toFixed(2)}</div>
+                  </div>
+                  <div className="md:col-span-2 flex items-center gap-2 md:justify-end">
+                    <Button variant="ghost" size="icon" onClick={() => handleOpenModal(trade)}><Edit className="w-4 h-4" /></Button>
+                    <Button variant="ghost" size="icon" onClick={() => deleteTrade(trade.id)}><Trash2 className="w-4 h-4" /></Button>
                   </div>
                 </div>
               ))
             ) : (
-              <div className="p-8 text-center text-muted-foreground">No trades found matching your criteria</div>
+              <div className="p-8 text-center text-muted-foreground">
+                <BookOpen className="w-12 h-12 mx-auto mb-4 text-gray-400" />
+                <h3 className="text-lg font-semibold">Your Journal is Empty</h3>
+                <p>Log your first trade to start analyzing your performance.</p>
+                <Button variant="secondary" className="mt-4" onClick={() => handleOpenModal(null)}>
+                  Add First Trade
+                </Button>
+              </div>
             )}
           </div>
         </CardContent>
