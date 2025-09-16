@@ -1,1 +1,1 @@
-SELECT * FROM cron.job;
+SELECT cron.unschedule(3);
