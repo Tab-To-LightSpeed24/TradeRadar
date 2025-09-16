@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -75,6 +75,7 @@ const Journal = () => {
   const [formData, setFormData] = useState(initialFormState);
   const [filter, setFilter] = useState("all");
   const [searchTerm, setSearchTerm] = useState("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const fetchTrades = useCallback(async () => {
     if (!user) return;
@@ -263,6 +264,63 @@ const Journal = () => {
     toast.success("Trades exported successfully!");
   };
 
+  const handleImportClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileImport = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file || !user) return;
+
+    const loadingToast = toast.loading("Importing trades...");
+
+    Papa.parse(file, {
+      header: true,
+      skipEmptyLines: true,
+      complete: async (results) => {
+        try {
+          const tradesToImport = results.data.map((row: any) => {
+            // Basic validation
+            if (!row['Symbol'] || !row['Entry Time']) return null;
+            return {
+              user_id: user.id,
+              symbol: row['Symbol'],
+              entry_time: row['Entry Time'] ? new Date(row['Entry Time']).toISOString() : null,
+              exit_time: row['Exit Time'] ? new Date(row['Exit Time']).toISOString() : null,
+              entry_price: row['Entry Price'] ? parseFloat(row['Entry Price']) : null,
+              exit_price: row['Exit Price'] ? parseFloat(row['Exit Price']) : null,
+              size: row['Size'] ? parseInt(row['Size']) : null,
+              pnl: row['P&L'] ? parseFloat(row['P&L']) : null,
+              strategy: row['Strategy'] || null,
+              notes: row['Notes'] || null,
+            };
+          }).filter(Boolean); // Remove null entries
+
+          if (tradesToImport.length === 0) {
+            toast.warning("No valid trades found in the file to import.");
+            return;
+          }
+
+          const { error } = await supabase.from('trades').insert(tradesToImport);
+          if (error) throw error;
+
+          toast.success(`${tradesToImport.length} trades imported successfully!`);
+          fetchTrades();
+        } catch (error: any) {
+          toast.error(`Import failed: ${error.message}`);
+        } finally {
+          toast.dismiss(loadingToast);
+          // Reset file input
+          if (event.target) event.target.value = '';
+        }
+      },
+      error: (error) => {
+        toast.error(`CSV parsing error: ${error.message}`);
+        toast.dismiss(loadingToast);
+      }
+    });
+  };
+
   if (authLoading) {
     return (
       <div className="container mx-auto py-8 flex justify-center items-center">
@@ -341,7 +399,8 @@ const Journal = () => {
             </DialogContent>
           </Dialog>
           <Button variant="outline" className="flex items-center gap-2" onClick={handleExport}><Download className="w-4 h-4" />Export</Button>
-          <Button variant="outline" className="flex items-center gap-2"><Upload className="w-4 h-4" />Import</Button>
+          <input type="file" ref={fileInputRef} onChange={handleFileImport} accept=".csv" className="hidden" />
+          <Button variant="outline" className="flex items-center gap-2" onClick={handleImportClick}><Upload className="w-4 h-4" />Import</Button>
         </div>
       </div>
 
@@ -382,7 +441,6 @@ const Journal = () => {
                   <SelectItem value="losers">Losers</SelectItem>
                 </SelectContent>
               </Select>
-              <Button variant="outline"><Filter className="w-4 h-4" /></Button>
             </div>
           </div>
         </CardHeader>

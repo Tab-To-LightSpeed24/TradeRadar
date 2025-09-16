@@ -46,7 +46,7 @@ export const StrategyEditor = ({ isOpen, onClose, onSave, strategy }: StrategyEd
     if (isOpen) {
       if (strategy) {
         setName(strategy.name);
-        setDescription(strategy.description);
+        setDescription(strategy.description || "");
         setTimeframe(strategy.timeframe);
         setSymbols(Array.isArray(strategy.symbols) ? strategy.symbols.join(", ") : "");
         setStatus(strategy.status === 'running' ? 'running' : 'stopped');
@@ -95,6 +95,35 @@ export const StrategyEditor = ({ isOpen, onClose, onSave, strategy }: StrategyEd
     } else {
       toast.info("A strategy must have at least one condition.");
     }
+  };
+
+  const renderValueInput = (condition: StrategyCondition, index: number) => {
+    const valueIsIndicator = ['crosses_above', 'crosses_below'].includes(condition.operator);
+    
+    if (valueIsIndicator) {
+      return (
+        <Select value={condition.value} onValueChange={(val) => handleConditionChange(index, 'value', val)}>
+          <SelectTrigger><SelectValue placeholder="Select Indicator" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="SMA50">SMA (50)</SelectItem>
+            <SelectItem value="SMA200">SMA (200)</SelectItem>
+            <SelectItem value="EMA20">EMA (20)</SelectItem>
+            <SelectItem value="EMA50">EMA (50)</SelectItem>
+            <SelectItem value="Upper Bollinger Band">Upper Bollinger Band</SelectItem>
+            <SelectItem value="Middle Bollinger Band">Middle Bollinger Band</SelectItem>
+            <SelectItem value="Lower Bollinger Band">Lower Bollinger Band</SelectItem>
+          </SelectContent>
+        </Select>
+      );
+    }
+    
+    return (
+      <Input 
+        placeholder="Value" 
+        value={condition.value}
+        onChange={(e) => handleConditionChange(index, 'value', e.target.value)}
+      />
+    );
   };
 
   return (
@@ -166,6 +195,10 @@ export const StrategyEditor = ({ isOpen, onClose, onSave, strategy }: StrategyEd
                           <SelectItem value="RSI">RSI</SelectItem>
                           <SelectItem value="SMA50">SMA (50)</SelectItem>
                           <SelectItem value="SMA200">SMA (200)</SelectItem>
+                          <SelectItem value="EMA20">EMA (20)</SelectItem>
+                          <SelectItem value="EMA50">EMA (50)</SelectItem>
+                          <SelectItem value="MACD">MACD</SelectItem>
+                          <SelectItem value="STOCH">Stochastic (%K)</SelectItem>
                         </SelectContent>
                       </Select>
                       <Select value={condition.operator} onValueChange={(val) => handleConditionChange(index, 'operator', val)}>
@@ -177,11 +210,7 @@ export const StrategyEditor = ({ isOpen, onClose, onSave, strategy }: StrategyEd
                           <SelectItem value="crosses_below">Crosses Below</SelectItem>
                         </SelectContent>
                       </Select>
-                      <Input 
-                        placeholder="Value" 
-                        value={condition.value}
-                        onChange={(e) => handleConditionChange(index, 'value', e.target.value)}
-                      />
+                      {renderValueInput(condition, index)}
                     </div>
                     <Button variant="ghost" size="icon" onClick={() => removeCondition(index)}>
                       <XCircle className="w-4 h-4 text-destructive" />

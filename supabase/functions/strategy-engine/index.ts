@@ -6,7 +6,7 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-// --- Shared Twelve Data Fetcher ---
+// --- API & Caching ---
 const CACHE_DURATION_MINUTES = 5;
 
 async function fetchTwelveData(
@@ -50,6 +50,7 @@ async function fetchTwelveData(
   }
 }
 
+// --- Types and Mappings ---
 interface StrategyCondition {
   indicator: string;
   operator: string;
@@ -61,8 +62,24 @@ interface IndicatorPoint {
   timestamp: string | null;
 }
 
-// --- Helper Functions ---
+const INDICATOR_CONFIG: { [key: string]: { endpoint: string; params: Record<string, string>; key: string | string[] } } = {
+  'RSI': { endpoint: 'rsi', params: { time_period: '14' }, key: 'rsi' },
+  'SMA50': { endpoint: 'sma', params: { time_period: '50' }, key: 'sma' },
+  'SMA200': { endpoint: 'sma', params: { time_period: '200' }, key: 'sma' },
+  'EMA20': { endpoint: 'ema', params: { time_period: '20' }, key: 'ema' },
+  'EMA50': { endpoint: 'ema', params: { time_period: '50' }, key: 'ema' },
+  'MACD': { endpoint: 'macd', params: { fast_period: '12', slow_period: '26', signal_period: '9' }, key: 'macd' },
+  'STOCH': { endpoint: 'stoch', params: { fast_k_period: '14', slow_k_period: '3', slow_d_period: '3' }, key: 'slow_k' },
+  'BBANDS': { endpoint: 'bbands', params: { time_period: '20', sd: '2.0' }, key: ['upper_band', 'middle_band', 'lower_band'] },
+};
 
+const BBANDS_MAP: { [key: string]: string } = {
+  'Upper Bollinger Band': 'upper_band',
+  'Middle Bollinger Band': 'middle_band',
+  'Lower Bollinger Band': 'lower_band',
+};
+
+// --- Helper Functions ---
 function mapTimeframeToTwelveData(timeframe: string): string {
   const mapping: { [key: string]: string } = {
     "1m": "1min", "5m": "5min", "15m": "15min",
@@ -72,7 +89,7 @@ function mapTimeframeToTwelveData(timeframe: string): string {
 }
 
 function getLatestIndicatorPoint(data: any, key: string): IndicatorPoint {
-  if (!data?.values?.[0]) return { value: null, timestamp: null };
+  if (!data?.values?.[0] || data.values[0][key] === undefined) return { value: null, timestamp: null };
   const latest = data.values[0];
   return {
     value: parseFloat(latest[key]),
@@ -84,7 +101,8 @@ function evaluateCondition(
   price: number, values: Record<string, number | null>, cond: StrategyCondition
 ): boolean {
   const left = cond.indicator === 'Price' ? price : values[cond.indicator];
-  const right = ['RSI', 'SMA50', 'SMA200'].includes(cond.value) ? values[cond.value] : parseFloat(cond.value);
+  const right = values[cond.value] !== undefined ? values[cond.value] : parseFloat(cond.value);
+
   if (left === null || right === null || isNaN(left) || isNaN(right)) return false;
 
   console.log(`  Evaluating: ${cond.indicator}(${left.toFixed(2)}) ${cond.operator} ${cond.value}(${right.toFixed(2)})`);
@@ -127,7 +145,6 @@ async function sendTelegramAlert(
 }
 
 // --- Main Server Logic ---
-
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
@@ -148,39 +165,50 @@ serve(async (req) => {
       
       for (const symbol of strategy.symbols) {
         console.log(`- Checking ${symbol} for "${strategy.name}"`);
-        const required = new Set<string>(strategy.conditions.flatMap(c => 
-          [c.indicator, c.value].filter(v => ['RSI', 'SMA50', 'SMA200'].includes(v))
-        ));
         
-        const baseParams = { symbol, timezone: 'exchange' };
+        const requiredIndicators = new Set<string>();
+        strategy.conditions.forEach((cond: StrategyCondition) => {
+          if (INDICATOR_CONFIG[cond.indicator]) requiredIndicators.add(cond.indicator);
+          if (INDICATOR_CONFIG[cond.value]) requiredIndicators.add(cond.value);
+          if (Object.keys(BBANDS_MAP).includes(cond.value)) requiredIndicators.add('BBANDS');
+        });
+
+        const baseParams = { symbol, interval: mapTimeframeToTwelveData(strategy.timeframe), series_type: 'close', timezone: 'exchange' };
         const priceCall = fetchTwelveData('price', { symbol }, twelveDataApiKey, supabase);
-        const indicatorCalls = Array.from(required).map(ind => {
-          const endpoint = ind === 'RSI' ? 'rsi' : 'sma';
-          const time_period = ind === 'RSI' ? '14' : ind.replace('SMA', '');
-          return fetchTwelveData(endpoint, { ...baseParams, interval: mapTimeframeToTwelveData(strategy.timeframe), series_type: 'close', time_period }, twelveDataApiKey, supabase);
+        const indicatorCalls = Array.from(requiredIndicators).map(ind => {
+          const config = INDICATOR_CONFIG[ind];
+          return fetchTwelveData(config.endpoint, { ...baseParams, ...config.params }, twelveDataApiKey, supabase);
         });
 
         const [priceData, ...indicatorResults] = await Promise.all([priceCall, ...indicatorCalls]);
         const currentPrice = priceData ? parseFloat(priceData.price) : null;
-        if (currentPrice === null) continue;
+        if (currentPrice === null) {
+          console.log(`  Could not fetch price for ${symbol}. Skipping.`);
+          continue;
+        }
 
-        const indicatorPoints: Record<string, IndicatorPoint> = {};
+        const indicatorValues: Record<string, number | null> = {};
         let alertTimestamp: string | null = null;
 
-        Array.from(required).forEach((ind, i) => {
-          const key = ind === 'RSI' ? 'rsi' : 'sma';
-          const point = getLatestIndicatorPoint(indicatorResults[i], key);
-          indicatorPoints[ind] = point;
-          if (!alertTimestamp && point.timestamp) {
-            alertTimestamp = point.timestamp;
+        Array.from(requiredIndicators).forEach((ind, i) => {
+          const result = indicatorResults[i];
+          if (!result) return;
+          const config = INDICATOR_CONFIG[ind];
+          
+          if (Array.isArray(config.key)) {
+            Object.entries(BBANDS_MAP).forEach(([name, key]) => {
+              const point = getLatestIndicatorPoint(result, key);
+              indicatorValues[name] = point.value;
+              if (!alertTimestamp && point.timestamp) alertTimestamp = point.timestamp;
+            });
+          } else {
+            const point = getLatestIndicatorPoint(result, config.key);
+            indicatorValues[ind] = point.value;
+            if (!alertTimestamp && point.timestamp) alertTimestamp = point.timestamp;
           }
         });
 
-        const indicatorValues = Object.fromEntries(
-            Object.entries(indicatorPoints).map(([key, point]) => [key, point.value])
-        );
-
-        if (strategy.conditions.every(cond => evaluateCondition(currentPrice, indicatorValues, cond))) {
+        if (strategy.conditions.every((cond: StrategyCondition) => evaluateCondition(currentPrice, indicatorValues, cond))) {
           console.log(`  ✅ Conditions met for ${symbol}. Creating alert...`);
           const { error: alertError } = await supabase.from("alerts").insert({
             user_id: strategy.user_id, strategy_id: strategy.id, strategy_name: strategy.name,

@@ -26,6 +26,7 @@ import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import { Skeleton } from "@/components/ui/skeleton";
 import { format, formatDistanceToNow } from 'date-fns';
+import Papa from "papaparse";
 
 // Define the type for an alert
 interface Alert {
@@ -123,6 +124,36 @@ const Alerts = () => {
     return matchesFilter && matchesSearch;
   });
 
+  const handleExport = () => {
+    if (filteredAlerts.length === 0) {
+      toast.info("No alerts to export.");
+      return;
+    }
+
+    const dataToExport = filteredAlerts.map(alert => ({
+      'Strategy Name': alert.strategy_name,
+      Symbol: alert.symbol,
+      Price: alert.price,
+      Type: alert.type,
+      'Is Read': alert.is_read,
+      'Alert Time': alert.created_at ? new Date(alert.created_at).toLocaleString() : '',
+      'Data Timestamp': alert.data_timestamp ? new Date(alert.data_timestamp).toLocaleString() : '',
+    }));
+
+    const csv = Papa.unparse(dataToExport);
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `traderadar_alerts_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    toast.success("Alerts exported successfully!");
+  };
+
   if (authLoading) {
     return (
       <div className="container mx-auto py-8 flex justify-center items-center">
@@ -149,7 +180,7 @@ const Alerts = () => {
             <Check className="w-4 h-4 mr-2" />
             Mark All Read
           </Button>
-          <Button variant="outline">
+          <Button variant="outline" onClick={handleExport}>
             <Download className="w-4 h-4 mr-2" />
             Export
           </Button>
@@ -178,9 +209,6 @@ const Alerts = () => {
                   <SelectItem value="read">Read</SelectItem>
                 </SelectContent>
               </Select>
-              <Button variant="outline">
-                <Filter className="w-4 h-4" />
-              </Button>
             </div>
           </div>
         </CardContent>

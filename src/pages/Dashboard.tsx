@@ -19,6 +19,7 @@ import { toast } from "sonner";
 import { Skeleton } from "@/components/ui/skeleton";
 import { format, parseISO } from 'date-fns';
 import { PnLChart } from "@/components/PnLChart";
+import { Link } from "react-router-dom";
 
 interface Strategy {
   id: string;
@@ -197,10 +198,12 @@ const Dashboard = () => {
             )}
             Invoke Engine
           </Button>
-          <Button variant="outline" className="flex items-center gap-2">
-            <Settings className="w-4 h-4" />
-            Settings
-          </Button>
+          <Link to="/settings">
+            <Button variant="outline" className="flex items-center gap-2">
+              <Settings className="w-4 h-4" />
+              Settings
+            </Button>
+          </Link>
         </div>
       </div>
 
