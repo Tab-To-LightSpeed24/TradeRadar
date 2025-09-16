@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { 
   LayoutDashboard, 
@@ -20,6 +20,7 @@ import { useTheme } from "next-themes";
 import { cn } from "@/lib/utils";
 import { Link } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/lib/supabase";
 
 const Sidebar = ({ activePage, setActivePage }: { 
   activePage: string; 
@@ -28,6 +29,30 @@ const Sidebar = ({ activePage, setActivePage }: {
   const { theme, setTheme } = useTheme();
   const [isOpen, setIsOpen] = useState(false);
   const { user, loading, signInWithGoogle, signOut } = useAuth();
+  const [marketStatus, setMarketStatus] = useState<{ status: string; color: string }>({ status: "Checking...", color: "bg-gray-500" });
+
+  useEffect(() => {
+    const fetchMarketStatus = async () => {
+      try {
+        const { data, error } = await supabase.functions.invoke('market-status');
+        if (error) throw error;
+        
+        if (data.status === "Open") {
+          setMarketStatus({ status: "Market Open", color: "bg-green-500" });
+        } else {
+          setMarketStatus({ status: "Market Closed", color: "bg-red-500" });
+        }
+      } catch (error) {
+        console.error("Failed to fetch market status:", error);
+        setMarketStatus({ status: "Status Unknown", color: "bg-yellow-500" });
+      }
+    };
+
+    fetchMarketStatus();
+    // Refresh status every 5 minutes
+    const interval = setInterval(fetchMarketStatus, 5 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, []);
 
   const navItems = [
     { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, path: "/dashboard" },
@@ -98,10 +123,12 @@ const Sidebar = ({ activePage, setActivePage }: {
             <div className="px-3 py-2 text-sm">
               <div className="flex items-center gap-2 text-muted-foreground">
                 <span className="relative flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+                  {marketStatus.status === "Market Open" && (
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                  )}
+                  <span className={`relative inline-flex rounded-full h-2 w-2 ${marketStatus.color}`}></span>
                 </span>
-                Market Open
+                {marketStatus.status}
               </div>
             </div>
 

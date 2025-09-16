@@ -50,7 +50,6 @@ const Dashboard = () => {
   const [totalPnl, setTotalPnl] = useState(0);
   const [winRate, setWinRate] = useState(0);
   const [pnlData, setPnlData] = useState<PnLDataPoint[]>([]);
-  const [isInvoking, setIsInvoking] = useState(false);
 
   const fetchData = useCallback(async () => {
     if (!user) return;
@@ -98,26 +97,6 @@ const Dashboard = () => {
       fetchData();
     }
   }, [authLoading, fetchData]);
-
-  const handleInvokeFunction = async () => {
-    setIsInvoking(true);
-    toast.info("Invoking strategy engine... Please wait.");
-    try {
-      const { data, error } = await supabase.functions.invoke('strategy-engine', {
-        body: { name: 'DyadInvoke' }
-      });
-
-      if (error) throw error;
-
-      console.log('Function returned:', data);
-      toast.success("Strategy engine invoked successfully! Please check your Supabase logs.");
-    } catch (error: any) {
-      console.error("Error invoking function:", error);
-      toast.error(`Failed to invoke function: ${error.message}`);
-    } finally {
-      setIsInvoking(false);
-    }
-  };
 
   const toggleStrategy = async (id: string, currentStatus: string) => {
     const newStatus = currentStatus === "running" ? "stopped" : "running";
@@ -186,18 +165,6 @@ const Dashboard = () => {
       <div className="flex justify-between items-center mb-8">
         <h1 className="text-3xl font-bold">Trading Dashboard</h1>
         <div className="flex gap-2">
-          <Button 
-            onClick={handleInvokeFunction} 
-            disabled={isInvoking}
-            variant="destructive"
-          >
-            {isInvoking ? (
-              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-            ) : (
-              <Play className="w-4 h-4 mr-2" />
-            )}
-            Invoke Engine
-          </Button>
           <Link to="/settings">
             <Button variant="outline" className="flex items-center gap-2">
               <Settings className="w-4 h-4" />

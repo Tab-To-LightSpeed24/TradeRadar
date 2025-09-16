@@ -148,9 +148,19 @@ async function sendTelegramAlert(
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
+  // Security: Check for the service role key in the Authorization header
+  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  const authHeader = req.headers.get('Authorization');
+  if (!serviceRoleKey || authHeader !== `Bearer ${serviceRoleKey}`) {
+    return new Response(JSON.stringify({ error: "Unauthorized." }), { 
+      status: 401, 
+      headers: { ...corsHeaders, "Content-Type": "application/json" } 
+    });
+  }
+
   try {
     console.log("--- Strategy Engine Invoked ---");
-    const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+    const supabase = createClient(Deno.env.get("SUPABASE_URL")!, serviceRoleKey);
     const twelveDataApiKey = Deno.env.get("TWELVE_DATA_API_KEY");
     if (!twelveDataApiKey) throw new Error("TWELVE_DATA_API_KEY is not set.");
 
