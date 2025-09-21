@@ -1,10 +1,12 @@
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
-import { BarChart3, Bell, BookOpen, Zap } from "lucide-react";
+import { BarChart3, Bell, BookOpen } from "lucide-react";
 import { Footer } from "@/components/Footer";
+import { useAuth } from "@/contexts/AuthContext";
 
 const Index = () => {
   const navigate = useNavigate();
+  const { user, signInWithGoogle } = useAuth();
 
   const features = [
     {
@@ -24,6 +26,14 @@ const Index = () => {
     },
   ];
 
+  const handlePrimaryAction = () => {
+    if (user) {
+      navigate("/dashboard");
+    } else {
+      signInWithGoogle();
+    }
+  };
+
   return (
     <div className="flex flex-col min-h-screen">
       <main className="flex-1">
@@ -37,8 +47,8 @@ const Index = () => {
               Build, test, and deploy trading strategies without writing a single line of code. TradeRadar monitors the markets 24/7, so you don't have to.
             </p>
             <div className="flex justify-center gap-4">
-              <Button size="lg" onClick={() => navigate("/dashboard")}>
-                Go to Dashboard
+              <Button size="lg" onClick={handlePrimaryAction}>
+                {user ? "Go to Dashboard" : "Get Started"}
               </Button>
               <Button size="lg" variant="outline" onClick={() => document.getElementById('features')?.scrollIntoView({ behavior: 'smooth' })}>
                 Explore Features

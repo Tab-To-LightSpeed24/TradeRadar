@@ -1,1 +1,77 @@
-# Welcome to your Dyad app
+# TradeRadar 🚀
+
+TradeRadar is an AI-powered platform that allows you to build, test, and deploy automated trading strategies without writing a single line of code. It monitors the markets 24/7, sending you real-time alerts so you never miss an opportunity.
+
+## ✨ Key Features
+
+*   **Visual Strategy Builder**: Design complex trading strategies using an intuitive, no-code interface with popular technical indicators.
+*   **Real-Time Alerts**: Get instant notifications via in-app popups and Telegram the moment your strategy conditions are met.
+*   **Automated Trade Journal**: Log every signal and trade. Analyze your performance with insightful metrics and charts.
+*   **Performance Analytics**: A comprehensive dashboard provides a snapshot of your P&L, win rate, and best-performing strategies.
+*   **Data Import/Export**: Easily import your existing trade history via CSV or export your TradeRadar data for external analysis.
+
+## 📸 Screenshots
+
+*(I've set up this section for you. Please replace the placeholders below with your own screenshots!)*
+
+| Dashboard | Strategies Page |
+| :---: | :---: |
+| *[Insert Dashboard Screenshot Here]* | *[Insert Strategies Page Screenshot Here]* |
+
+| Trade Journal | Strategy Editor |
+| :---: | :---: |
+| *[Insert Journal Screenshot Here]* | *[Insert Editor Screenshot Here]* |
+
+
+## 🛠️ Tech Stack
+
+*   **Frontend**: React, TypeScript, Vite
+*   **Styling**: Tailwind CSS, shadcn/ui
+*   **Backend & Database**: Supabase (PostgreSQL, Auth, Edge Functions)
+*   **Charting**: Recharts
+*   **Market Data**: Twelve Data API
+
+## 🚀 Getting Started
+
+This project is set up to run with Supabase.
+
+### Prerequisites
+
+*   Node.js and npm
+*   A Supabase account
+
+### Installation & Setup
+
+1.  **Clone the repository:**
+    ```bash
+    git clone https://github.com/your-username/traderadar-app.git
+    cd traderadar-app
+    ```
+
+2.  **Install dependencies:**
+    ```bash
+    npm install
+    ```
+
+3.  **Set up Supabase:**
+    *   Create a new project on [Supabase](https://supabase.com/).
+    *   In your Supabase project, go to the **SQL Editor** and run the SQL scripts provided in the `supabase/` directory to set up your database schema.
+    *   Go to **Project Settings > API** and find your Project URL and `anon` public key.
+
+4.  **Configure Environment Variables:**
+    *   Create a `.env` file in the root of the project.
+    *   Add your Supabase credentials and any other required API keys:
+        ```
+        VITE_SUPABASE_URL=YOUR_SUPABASE_URL
+        VITE_SUPABASE_ANON_KEY=YOUR_SUPABASE_ANON_KEY
+        ```
+
+5.  **Run the development server:**
+    ```bash
+    npm run dev
+    ```
+    The application should now be running on `http://localhost:8080`.
+
+## 📄 License
+
+This project is licensed under the MIT License.
