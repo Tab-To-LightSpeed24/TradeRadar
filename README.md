@@ -1,5 +1,8 @@
 # TradeRadar 🚀
 
+<img width="1919" height="908" alt="image" src="https://github.com/user-attachments/assets/d724cb33-d30b-4cb3-8bc2-def114ec9fcd" />
+<img width="1919" height="902" alt="image" src="https://github.com/user-attachments/assets/86bdbd47-42aa-47bf-af0e-dd0c768e8c30" />
+
 TradeRadar is an AI-powered platform that allows you to build, test, and deploy automated trading strategies without writing a single line of code. It monitors the markets 24/7, sending you real-time alerts so you never miss an opportunity.
 
 ## ✨ Key Features
