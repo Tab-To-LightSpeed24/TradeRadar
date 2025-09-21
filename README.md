@@ -16,15 +16,11 @@ TradeRadar is an AI-powered platform that allows you to build, test, and deploy 
 
 | Dashboard | Strategies Page |
 | :---: | :---: |
-| <img width="1919" height="899" alt="image" src="https://github.com/user-attachments/assets/7c72302c-436d-4a5a-a859-cc3e71e119cb" />
- | <img width="1919" height="899" alt="image" src="https://github.com/user-attachments/assets/a717459b-70d5-44e5-8b2e-5ae1eccd4986" />
- |
+| <img width="1919" height="899" alt="image" src="https://github.com/user-attachments/assets/7c72302c-436d-4a5a-a859-cc3e71e119cb" /> | <img width="1919" height="899" alt="image" src="https://github.com/user-attachments/assets/a717459b-70d5-44e5-8b2e-5ae1eccd4986" /> |
 
 | Trade Journal | Strategy Editor |
 | :---: | :---: |
-|<img width="1919" height="905" alt="image" src="https://github.com/user-attachments/assets/79f4f220-5184-4450-a3f2-975a118dde36" />
- | <img width="1919" height="902" alt="image" src="https://github.com/user-attachments/assets/46f7d6b6-f890-457c-8e5e-2267cc029633" />
- |
+|<img width="1919" height="905" alt="image" src="https://github.com/user-attachments/assets/79f4f220-5184-4450-a3f2-975a118dde36" /> | <img width="1919" height="902" alt="image" src="https://github.com/user-attachments/assets/46f7d6b6-f890-457c-8e5e-2267cc029633" /> |
 
 
 ## 🛠️ Tech Stack
