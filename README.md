@@ -76,6 +76,3 @@ This project is set up to run with Supabase.
     ```
     The application should now be running on `http://localhost:8080`.
 
-## 📄 License
-
-This project is licensed under the MIT License.
